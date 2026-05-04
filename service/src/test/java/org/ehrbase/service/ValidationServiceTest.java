@@ -72,7 +72,6 @@ import org.ehrbase.openehr.sdk.test_data.composition.CompositionTestDataCanonica
 import org.ehrbase.openehr.sdk.test_data.contribution.ContributionTestDataCanonicalJson;
 import org.ehrbase.openehr.sdk.test_data.ehr.EhrTestDataCanonicalJson;
 import org.ehrbase.openehr.sdk.test_data.operationaltemplate.OperationalTemplateTestData;
-import org.ehrbase.openehr.sdk.util.functional.Try;
 import org.ehrbase.openehr.sdk.validation.ConstraintViolation;
 import org.ehrbase.openehr.sdk.validation.ConstraintViolationException;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidation;
@@ -100,8 +99,8 @@ class ValidationServiceTest {
 
         private final ConstraintViolation err = new ConstraintViolation("Terminology validation is disabled");
 
-        public Try<Boolean, ConstraintViolationException> validate(TerminologyParam param) {
-            return Try.failure(new ConstraintViolationException(List.of(err)));
+        public ConstraintViolation validate(TerminologyParam param) {
+            return err;
         }
 
         public boolean supports(TerminologyParam param) {

@@ -33,9 +33,7 @@ import net.minidev.json.JSONArray;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.Strings;
 import org.ehrbase.api.exception.InternalServerException;
-import org.ehrbase.openehr.sdk.util.functional.Try;
 import org.ehrbase.openehr.sdk.validation.ConstraintViolation;
-import org.ehrbase.openehr.sdk.validation.ConstraintViolationException;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidation;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidationException;
 import org.ehrbase.openehr.sdk.validation.terminology.TerminologyParam;
@@ -170,13 +168,12 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
     }
 
     @Override
-    public Try<Boolean, ConstraintViolationException> validate(TerminologyParam param) {
+    public ConstraintViolation validate(TerminologyParam param) {
         String url = param.extractFromParameter(p -> Optional.ofNullable(extractUrl(p)))
                 .orElse(null);
 
         if (url == null) {
-            return Try.failure(
-                    new ConstraintViolationException(List.of(new ConstraintViolation("Missing value-set url"))));
+            return new ConstraintViolation("Missing value-set url");
         }
 
         if (param.isUseCodeSystem()) {
@@ -240,7 +237,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         }
     }
 
-    private Try<Boolean, ConstraintViolationException> validateCode(String url, CodePhrase codePhrase) {
+    private ConstraintViolation validateCode(String url, CodePhrase codePhrase) {
         DocumentContext context;
         try {
             context = internalGet(
@@ -251,19 +248,18 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                         "An error occurred while validating the code in CodeSystem", e);
             }
             LOG.warn("An error occurred while validating the code in CodeSystem: {}", e.getMessage());
-            return Try.success(Boolean.FALSE);
+            return null;
         }
         boolean result = context.read("$.parameter[0].valueBoolean", boolean.class);
         if (!result) {
             var message = context.read("$.parameter[1].valueString", String.class);
-            var constraintViolation = new ConstraintViolation(message);
-            return Try.failure(new ConstraintViolationException(List.of(constraintViolation)));
+            return new ConstraintViolation(message);
         }
 
-        return Try.success(Boolean.TRUE);
+        return null;
     }
 
-    private Try<Boolean, ConstraintViolationException> expandValueSet(String url, CodePhrase codePhrase) {
+    private ConstraintViolation expandValueSet(String url, CodePhrase codePhrase) {
         DocumentContext context;
         try {
             // TODO CDR-2273 validate instead of expand?
@@ -273,24 +269,25 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                 throw new ExternalTerminologyValidationException("An error occurred while expanding the ValueSet", e);
             }
             LOG.warn("An error occurred while expanding the ValueSet: {}", e.getMessage());
-            return Try.success(Boolean.FALSE);
+            return null;
         }
         List<Map<String, String>> codings =
                 context.read("$.expansion.contains[?(@.code=='%s')]".formatted(codePhrase.getCodeString()));
 
         if (codings.isEmpty()) {
-            var constraintViolation = new ConstraintViolation(MessageFormat.format(
+            return new ConstraintViolation(MessageFormat.format(
                     "The value {0} does not match any option from value set {1}", codePhrase.getCodeString(), url));
-            return Try.failure(new ConstraintViolationException(List.of(constraintViolation)));
         } else if (codings.size() == 1) {
             Map<String, String> coding = codings.getFirst();
             String system = coding.get(ValueSetConverter.SYS);
-            if (!Strings.CS.equals(system, codePhrase.getTerminologyId().getValue())) {
-                var constraintViolation = new ConstraintViolation(
+            if (Strings.CS.equals(system, codePhrase.getTerminologyId().getValue())) {
+                return null;
+            } else {
+                return new ConstraintViolation(
                         MessageFormat.format("The terminology {0} must be  {1}", codePhrase.getCodeString(), system));
-                return Try.failure(new ConstraintViolationException(List.of(constraintViolation)));
             }
+        } else {
+            return null;
         }
-        return Try.success(Boolean.TRUE);
     }
 }

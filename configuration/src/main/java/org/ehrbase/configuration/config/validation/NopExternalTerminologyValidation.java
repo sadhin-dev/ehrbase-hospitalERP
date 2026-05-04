@@ -20,9 +20,7 @@ package org.ehrbase.configuration.config.validation;
 import com.nedap.archie.rm.datavalues.DvCodedText;
 import java.util.Collections;
 import java.util.List;
-import org.ehrbase.openehr.sdk.util.functional.Try;
 import org.ehrbase.openehr.sdk.validation.ConstraintViolation;
-import org.ehrbase.openehr.sdk.validation.ConstraintViolationException;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidation;
 import org.ehrbase.openehr.sdk.validation.terminology.TerminologyParam;
 
@@ -34,8 +32,8 @@ public class NopExternalTerminologyValidation implements ExternalTerminologyVali
         this.err = new ConstraintViolation(errorMessage);
     }
 
-    public Try<Boolean, ConstraintViolationException> validate(TerminologyParam param) {
-        return Try.failure(new ConstraintViolationException(List.of(err)));
+    public ConstraintViolation validate(TerminologyParam param) {
+        return err;
     }
 
     public boolean supports(TerminologyParam param) {
