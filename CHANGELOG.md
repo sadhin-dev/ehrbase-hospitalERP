@@ -9,6 +9,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  ### Added
  ### Changed 
  ### Fixed 
+ - Terminology fixes, for details see SDK changelog [#1616](https://github.com/ehrbase/ehrbase/pull/1616)
 
 ## [2.31.0]
  ### Added
