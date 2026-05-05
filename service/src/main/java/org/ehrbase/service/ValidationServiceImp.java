@@ -52,7 +52,7 @@ import org.ehrbase.openehr.sdk.validation.ConstraintViolation;
 import org.ehrbase.openehr.sdk.validation.ConstraintViolationException;
 import org.ehrbase.openehr.sdk.validation.LocatableValidator;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidation;
-import org.ehrbase.openehr.sdk.validation.terminology.ItemStructureVisitor;
+import org.ehrbase.openehr.sdk.validation.terminology.TerminologyValidationVisitor;
 import org.ehrbase.openehr.sdk.validation.webtemplate.FastRMObjectValidator;
 import org.ehrbase.openehr.sdk.webtemplate.model.WebTemplate;
 import org.ehrbase.service.validation.ValidationProperties;
@@ -177,12 +177,7 @@ public class ValidationServiceImp implements ValidationService {
         }
 
         // check code phrases against terminologies
-        try {
-            ItemStructureVisitor itemStructureVisitor = new ItemStructureVisitor();
-            itemStructureVisitor.validate(composition);
-        } catch (ReflectiveOperationException e) {
-            throw new InternalServerException(e);
-        }
+        new TerminologyValidationVisitor().validate(composition);
     }
 
     private static void compositionMandatoryProperty(Object value, String attribute) {
