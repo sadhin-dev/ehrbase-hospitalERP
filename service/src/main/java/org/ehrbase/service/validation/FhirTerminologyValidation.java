@@ -57,18 +57,24 @@ import reactor.netty.http.client.HttpClient;
  */
 public class FhirTerminologyValidation implements ExternalTerminologyValidation {
 
-    static final String SUPPORTS_CODE_SYS_TEMPL = "%s/CodeSystem?url=%s";
-    static final String SUPPORTS_VALUE_SET_TEMPL = "%s/ValueSet?url=%s";
-    private static final String ERR_SUPPORTS =
-            "An error occurred while checking if FHIR terminology server supports the referenceSetUri: %s";
-    static final String CODE_PHRASE_TEMPL = "code=%s&system=%s";
-    private static final String ERR_EXPAND_VALUESET = "Error while expanding ValueSet[%s]";
+    static final String SUPPORTS_CODE_SYS_TEMPL = "%s/CodeSystem?_summary=true&url=%s";
+    static final String SUPPORTS_VALUE_SET_TEMPL = "%s/ValueSet?_summary=true&url=%s";
     static final String EXPAND_VALUE_SET_TEMPL = "%s/ValueSet/$expand?%s";
 
+    private static final String ERR_SUPPORTS =
+            "An error occurred while checking if FHIR terminology server supports the referenceSetUri: %s";
+
+    private static final String ERR_EXPAND_VALUESET = "Error while expanding ValueSet[%s]";
+
+    public static final String FHIR_ACCEPT_HEADER = "application/fhir+json";
+
+    private static final String[] ACCEPTED_FHIR_APIS = {"//fhir.hl7.org", "terminology://fhir.hl7.org", "//hl7.org/fhir"};
+
     private static final Logger LOG = LoggerFactory.getLogger(FhirTerminologyValidation.class);
+
     private final String baseUrl;
     private final boolean failOnError;
-    private final WebClient webClient;
+    private final WebClient webClientTemplate;
 
     public FhirTerminologyValidation(String baseUrl) {
         this(baseUrl, true);
@@ -81,7 +87,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
     public FhirTerminologyValidation(String baseUrl, boolean failOnError, WebClient webClient) {
         this.baseUrl = baseUrl;
         this.failOnError = failOnError;
-        this.webClient = webClient;
+        this.webClientTemplate = webClient;
     }
 
     private String extractUrl(String referenceSetUri) {
@@ -96,14 +102,19 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         // in the metrics call, uri in the uriTagValue function does not have the query parameters
         HttpClient client = HttpClient.create().metrics(true, _ -> uriValue).responseTimeout(Duration.ofSeconds(10));
 
-        return webClient
+        return webClientTemplate
                 .mutate()
                 .clientConnector(new ReactorClientHttpConnector(client))
                 .baseUrl(url)
-                .defaultHeader(HttpHeaders.ACCEPT, "application/fhir+json")
+                .defaultHeader(HttpHeaders.ACCEPT, FHIR_ACCEPT_HEADER)
                 .build();
     }
 
+    /**
+     * Include the url parameter in the metrics uri tag
+     * @param uri
+     * @return
+     */
     static String uriTagValue(String uri) {
         UriComponents uc = UriComponentsBuilder.fromUriString(uri).build();
         String path = uc.getPath();
@@ -132,14 +143,8 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         }
     }
 
-    static String renderTempl(String templ, String... args) {
-        return templ.formatted((Object[]) args);
-    }
-
-    private final String[] acceptedFhirApis = {"//fhir.hl7.org", "terminology://fhir.hl7.org", "//hl7.org/fhir"};
-
     private boolean isValidTerminology(String url) {
-        boolean valid = url != null && Arrays.stream(acceptedFhirApis).anyMatch(url::startsWith);
+        boolean valid = url != null && Arrays.stream(ACCEPTED_FHIR_APIS).anyMatch(url::startsWith);
         if (!valid) {
             LOG.warn("Unsupported service-api: {}", url);
         }
@@ -153,9 +158,9 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                 .flatMap(_ -> param.extractFromParameter(p -> Optional.ofNullable(extractUrl(p))))
                 .map(urlParam -> {
                     if (param.isUseValueSet()) {
-                        return renderTempl(SUPPORTS_VALUE_SET_TEMPL, baseUrl, urlParam);
+                        return SUPPORTS_VALUE_SET_TEMPL.formatted(baseUrl, urlParam);
                     } else if (param.isUseCodeSystem()) {
-                        return renderTempl(SUPPORTS_CODE_SYS_TEMPL, baseUrl, urlParam);
+                        return SUPPORTS_CODE_SYS_TEMPL.formatted(baseUrl, urlParam);
                     } else {
                         return null;
                     }
@@ -188,7 +193,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         if (param.isUseCodeSystem()) {
             return validateCode(url, param.getCodePhrase().orElseThrow());
         } else if (param.isUseValueSet()) {
-            return expandValueSet(url, param.getCodePhrase().orElseThrow());
+            return validateViaExpandValueSet(url, param.getCodePhrase().orElseThrow());
         } else {
             throw new IllegalStateException();
         }
@@ -204,33 +209,11 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         }
     }
 
-    @Override
-    public List<DvCodedText> expand(TerminologyParam param) {
-        return param.getServiceApi()
-                .filter(this::isValidTerminology)
-                .flatMap(_ -> param.extractFromParameter(p -> Optional.ofNullable(guaranteePrefix("url=", p))))
-                .map(urlParam -> renderTempl(EXPAND_VALUE_SET_TEMPL, baseUrl, urlParam))
-                .map(url -> {
-                    try {
-                        return internalGet(url);
-                    } catch (WebClientException e) {
-                        String msg = ERR_EXPAND_VALUESET.formatted(e.getMessage());
-                        if (failOnError) {
-                            throw new ExternalTerminologyValidationException(msg, e);
-                        }
-                        LOG.warn(msg);
-                        return null;
-                    }
-                })
-                .map(ValueSetConverter::convert)
-                .orElseGet(List::of);
-    }
-
-    abstract static class ValueSetConverter {
+    static final class ValueSetConverter {
         private static final String CONTAINS = "$['expansion']['contains'][*]";
         private static final String SYS = "system";
         private static final String CODE = "code";
-        private static final String DISP = "display";
+        private static final String DISPLAY = "display";
 
         private ValueSetConverter() {
             // NOP
@@ -241,7 +224,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
             JSONArray read = ctx.read(CONTAINS);
             return read.stream()
                     .map(e -> (Map<String, String>) e)
-                    .map(m -> new DvCodedText(m.get(DISP), new CodePhrase(new TerminologyId(m.get(SYS)), m.get(CODE))))
+                    .map(m -> new DvCodedText(m.get(DISPLAY), new CodePhrase(new TerminologyId(m.get(SYS)), m.get(CODE))))
                     .toList();
         }
     }
@@ -268,7 +251,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         return null;
     }
 
-    private ConstraintViolation expandValueSet(String url, CodePhrase codePhrase) {
+    private ConstraintViolation validateViaExpandValueSet(String url, CodePhrase codePhrase) {
         DocumentContext context;
         try {
             // TODO CDR-2273 validate instead of expand?

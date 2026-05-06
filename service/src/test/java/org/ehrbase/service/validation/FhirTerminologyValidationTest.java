@@ -31,7 +31,6 @@ import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.internal.JsonContext;
 import com.nedap.archie.rm.datavalues.DvCodedText;
-import java.util.IllegalFormatException;
 import java.util.List;
 import java.util.stream.IntStream;
 import net.java.quickcheck.generator.PrimitiveGenerators;
@@ -53,21 +52,6 @@ class FhirTerminologyValidationTest {
         Assertions.assertNull(FhirTerminologyValidation.guaranteePrefix("url=", ""));
         Assertions.assertEquals(
                 "xyz=XYZ&url=ABC", FhirTerminologyValidation.guaranteePrefix("url=", "xyz=XYZ&url=ABC"));
-    }
-
-    @Test
-    void renderTempl() {
-        String ref = String.format(FhirTerminologyValidation.SUPPORTS_CODE_SYS_TEMPL, "abc", "123");
-        String render1 =
-                FhirTerminologyValidation.renderTempl(FhirTerminologyValidation.SUPPORTS_CODE_SYS_TEMPL, "abc", "123");
-        Assertions.assertEquals(ref, render1);
-
-        String render2 = FhirTerminologyValidation.renderTempl(
-                FhirTerminologyValidation.SUPPORTS_CODE_SYS_TEMPL, "abc", "123", "xyz");
-        Assertions.assertEquals(ref, render2);
-        Assertions.assertThrows(
-                IllegalFormatException.class,
-                () -> FhirTerminologyValidation.renderTempl(FhirTerminologyValidation.SUPPORTS_CODE_SYS_TEMPL, "abc"));
     }
 
     @Test
@@ -99,8 +83,7 @@ class FhirTerminologyValidationTest {
         assertTrue(validation.supports(param));
 
         verify(validation)
-                .internalGet(FhirTerminologyValidation.renderTempl(
-                        FhirTerminologyValidation.SUPPORTS_VALUE_SET_TEMPL, baseUrl, valueSetUrl));
+                .internalGet(FhirTerminologyValidation.SUPPORTS_VALUE_SET_TEMPL.formatted(baseUrl, valueSetUrl));
     }
 
     @Test

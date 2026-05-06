@@ -53,7 +53,6 @@ import com.nedap.archie.rm.support.identification.TerminologyId;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -107,9 +106,6 @@ class ValidationServiceTest {
             return false;
         }
 
-        public List<DvCodedText> expand(TerminologyParam param) {
-            return Collections.emptyList();
-        }
     }
 
     private final ValidationService spyService =
