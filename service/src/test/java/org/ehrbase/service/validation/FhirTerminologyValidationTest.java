@@ -19,23 +19,18 @@ package org.ehrbase.service.validation;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import ca.uhn.fhir.context.FhirContext;
-import com.jayway.jsonpath.DocumentContext;
-import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.internal.JsonContext;
-import com.nedap.archie.rm.datavalues.DvCodedText;
 import java.util.List;
 import java.util.stream.IntStream;
 import net.java.quickcheck.generator.PrimitiveGenerators;
 import org.ehrbase.openehr.sdk.validation.terminology.TerminologyParam;
-import org.ehrbase.service.validation.FhirTerminologyValidation.ValueSetConverter;
 import org.hl7.fhir.r4.model.ValueSet;
 import org.hl7.fhir.r4.model.ValueSet.ValueSetExpansionComponent;
 import org.hl7.fhir.r4.model.ValueSet.ValueSetExpansionContainsComponent;
@@ -55,28 +50,17 @@ class FhirTerminologyValidationTest {
     }
 
     @Test
-    void valueSetConverter() {
-        ValueSet values = anyValueSet();
-
-        String json = FhirContext.forR4().newJsonParser().encodeResourceToString(values);
-        DocumentContext ctx = JsonPath.parse(json);
-
-        List<DvCodedText> dv = ValueSetConverter.convert(ctx);
-
-        Assertions.assertEquals(values.getExpansion().getContains().size(), dv.size());
-    }
-
-    @Test
     void supports_ValidParams_ReturnsTrue() {
         String baseUrl = "http://terminology.local";
         String valueSetUrl = "http://snomed.info/sct?fhir_vs=ecl/%3C306206005";
 
         FhirTerminologyValidation validation = spy(new FhirTerminologyValidation(baseUrl));
-        TerminologyParam param =
-                TerminologyParam.ofFhir("//fhir.hl7.org/ValueSet/$expand?url=" + valueSetUrl + "&activeOnly=true");
+        TerminologyParam param = TerminologyParam.ofFhir(
+                "//fhir.hl7.org/ValueSet/$expand?url=" + valueSetUrl + "&activeOnly=true", null);
 
         JsonContext jsonContext = mock(JsonContext.class);
-        when(jsonContext.read("$.total", int.class)).thenReturn(1);
+        when(jsonContext.read(FhirTerminologyValidation.SUPPORTS_TOTAL_JSON_PATH, int.class))
+                .thenReturn(1);
 
         doReturn(jsonContext).when(validation).internalGet(Mockito.anyString());
 
@@ -90,9 +74,11 @@ class FhirTerminologyValidationTest {
     void supports_InvalidParams_ReturnsFalse() {
         FhirTerminologyValidation validation = spy(new FhirTerminologyValidation("http://terminology.local"));
 
-        assertFalse(validation.supports(TerminologyParam.ofFhir("//fhir.hl7.org/ValueSet/$expand?activeOnly=true")));
+        assertFalse(
+                validation.supports(TerminologyParam.ofFhir("//fhir.hl7.org/ValueSet/$expand?activeOnly=true", null)));
         assertFalse(validation.supports(TerminologyParam.ofFhir(
-                "//invalid/ValueSet/$expand?url=http://snomed.info/sct?fhir_vs=ecl/%3C306206005&activeOnly=true")));
+                "//invalid/ValueSet/$expand?url=http://snomed.info/sct?fhir_vs=ecl/%3C306206005&activeOnly=true",
+                null)));
 
         verify(validation, never()).internalGet(Mockito.anyString());
     }

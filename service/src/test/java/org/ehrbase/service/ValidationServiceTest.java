@@ -105,7 +105,6 @@ class ValidationServiceTest {
         public boolean supports(TerminologyParam param) {
             return false;
         }
-
     }
 
     private final ValidationService spyService =
