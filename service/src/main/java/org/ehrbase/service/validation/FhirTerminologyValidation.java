@@ -54,18 +54,17 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
 
     static final String SUPPORTS_CODE_SYS_TEMPL = "%s/CodeSystem?_summary=true&url=%s";
     static final String SUPPORTS_VALUE_SET_TEMPL = "%s/ValueSet?_summary=true&url=%s";
+    private static final String VALUESET_VALIDATE_URL_TPL = "%s/ValueSet/$validate-code?url=%s&code=%s&system=%s";
+    private static final String CODESYSTEM_VALIDATE_URL_TPL = "%s/CodeSystem/$validate-code?url=%s&code=%s";
+
     public static final JsonPath VALIDATE_CODE_RESULT_JSON_PATH =
             JsonPath.compile("$.parameter[?(@.name==\"result\" && \"valueBoolean\" == true)].valueBoolean");
     public static final JsonPath VALIDATE_CODE_MESSAGE_JSON_PATH =
             JsonPath.compile("$.parameter[?(@.name==\"message\")].valueString");
     public static final JsonPath SUPPORTS_TOTAL_JSON_PATH = JsonPath.compile("$.total");
-    private static String VALUESET_VALIDATE_URL_TPL = "%s/ValueSet/$validate-code?url=%s&code=%s&system=%s";
-    private static String CODESYSTEM_VALIDATE_URL_TPL = "%s/CodeSystem/$validate-code?url=%s&code=%s";
 
     private static final String ERR_SUPPORTS =
             "An error occurred while checking if FHIR terminology server supports the referenceSetUri: %s";
-
-    private static final String ERR_EXPAND_VALUESET = "Error while expanding ValueSet[%s]";
 
     public static final String FHIR_ACCEPT_HEADER = "application/fhir+json";
 
@@ -92,8 +91,12 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         this.webClientTemplate = webClient;
     }
 
-    private String extractUrl(String referenceSetUri) {
-        UriComponents uriComponents = UriComponentsBuilder.fromUriString("/foo?%s".formatted(referenceSetUri))
+    static String extractUrl(String referenceSetUri) {
+        if (referenceSetUri == null) {
+            return null;
+        }
+
+        UriComponents uriComponents = UriComponentsBuilder.fromUriString("/?%s".formatted(referenceSetUri))
                 .build();
         MultiValueMap<String, String> queryParams = uriComponents.getQueryParams();
         return queryParams.getFirst("url");
@@ -158,13 +161,10 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         return Optional.ofNullable(param)
                 .map(TerminologyParam::serviceApi)
                 .filter(this::isValidTerminology)
-                .flatMap(_ -> param.extractFromParameter(p -> Optional.ofNullable(extractUrl(p))))
-                .map(urlParam -> {
-                    if (param.useValueSet()) {
-                        return SUPPORTS_VALUE_SET_TEMPL.formatted(baseUrl, urlParam);
-                    } else {
-                        return SUPPORTS_CODE_SYS_TEMPL.formatted(baseUrl, urlParam);
-                    }
+                .map(_ -> extractUrl(param.parameter()))
+                .map(urlParam -> switch (param.resouceType()) {
+                    case VALUE_SET -> SUPPORTS_VALUE_SET_TEMPL.formatted(baseUrl, urlParam);
+                    case CODE_SYSTEM -> SUPPORTS_CODE_SYS_TEMPL.formatted(baseUrl, urlParam);
                 })
                 .map(url -> {
                     try {
@@ -184,14 +184,12 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
 
     @Override
     public ConstraintViolation validate(TerminologyParam param) {
-        String url = param.extractFromParameter(p -> Optional.ofNullable(extractUrl(p)))
-                .orElse(null);
-
+        String url = extractUrl(param.parameter());
         if (url == null) {
             return new ConstraintViolation("Missing value-set url");
         }
 
-        return validateCode(url, param.codePhrase(), param.useValueSet());
+        return validateCode(url, param.codePhrase(), param.resouceType());
     }
 
     static String guaranteePrefix(String prefix, String str) {
@@ -204,15 +202,19 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         }
     }
 
-    private ConstraintViolation validateCode(String fhirTerminologyUri, CodePhrase codePhrase, boolean forValueSet) {
-        String url;
+    private ConstraintViolation validateCode(
+            String fhirTerminologyUri, CodePhrase codePhrase, TerminologyParam.ResouceType resouceType) {
         String code = codePhrase.getCodeString();
-        if (forValueSet) {
-            TerminologyId system = codePhrase.getTerminologyId();
-            url = VALUESET_VALIDATE_URL_TPL.formatted(baseUrl, fhirTerminologyUri, code, system);
-        } else {
-            url = CODESYSTEM_VALIDATE_URL_TPL.formatted(baseUrl, fhirTerminologyUri, code);
-        }
+
+        String url =
+                switch (resouceType) {
+                    case VALUE_SET -> {
+                        TerminologyId system = codePhrase.getTerminologyId();
+                        yield VALUESET_VALIDATE_URL_TPL.formatted(baseUrl, fhirTerminologyUri, code, system);
+                    }
+                    case CODE_SYSTEM -> CODESYSTEM_VALIDATE_URL_TPL.formatted(baseUrl, fhirTerminologyUri, code);
+                };
+
         DocumentContext context;
         try {
             context = internalGet(url);

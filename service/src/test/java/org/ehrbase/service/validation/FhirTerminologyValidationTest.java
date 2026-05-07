@@ -17,6 +17,7 @@
  */
 package org.ehrbase.service.validation;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doReturn;
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.when;
 import com.jayway.jsonpath.internal.JsonContext;
 import java.util.List;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import net.java.quickcheck.generator.PrimitiveGenerators;
 import org.ehrbase.openehr.sdk.validation.terminology.TerminologyParam;
 import org.hl7.fhir.r4.model.ValueSet;
@@ -104,6 +106,17 @@ class FhirTerminologyValidationTest {
                         basePath + "/fhir/ValueSet/$expand?url=https://hl7.org/fhir/ValueSet/administrative-gender"));
 
         Assertions.assertEquals("/fhir/metadata", FhirTerminologyValidation.uriTagValue(basePath + "/fhir/metadata"));
+    }
+
+    @Test
+    void extractUrl() {
+        assertThat(FhirTerminologyValidation.extractUrl("code=12345")).isNull();
+        Stream.of(
+                        "url=http://snomed.info/sct",
+                        "url=http://snomed.info/sct&code=12345",
+                        "code=12345&url=http://snomed.info/sct")
+                .forEach(
+                        p -> assertThat(FhirTerminologyValidation.extractUrl(p)).isEqualTo("http://snomed.info/sct"));
     }
 
     static ValueSet anyValueSet() {
