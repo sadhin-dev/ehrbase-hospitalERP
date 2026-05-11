@@ -27,6 +27,7 @@ import com.nedap.archie.rm.support.identification.TerminologyId;
 import java.io.IOException;
 import org.ehrbase.openehr.sdk.validation.webtemplate.DvCodedTextValidator;
 import org.ehrbase.openehr.sdk.webtemplate.model.WebTemplateNode;
+import org.ehrbase.service.validation.ExternalTerminologyProviderProperties.ProviderType;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -40,8 +41,8 @@ class DvCodedTextIT {
                 getClass().getResourceAsStream("/webtemplate_nodes/" + file), WebTemplateNode.class);
     }
 
-    private final FhirTerminologyValidation fhirTerminologyValidator =
-            new FhirTerminologyValidation("https://r4.ontoserver.csiro.au/fhir");
+    private final FhirTerminologyValidation fhirTerminologyValidator = new FhirTerminologyValidation(
+            new ExternalTerminologyProviderProperties(ProviderType.FHIR, "https://r4.ontoserver.csiro.au/fhir", false));
 
     private final DvCodedTextValidator validator = new DvCodedTextValidator(fhirTerminologyValidator);
 

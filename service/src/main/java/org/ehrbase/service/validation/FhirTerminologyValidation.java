@@ -22,11 +22,15 @@ import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.nedap.archie.rm.datatypes.CodePhrase;
 import com.nedap.archie.rm.support.identification.TerminologyId;
+import io.netty.handler.timeout.TimeoutException;
+import java.net.ConnectException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
-import org.apache.commons.lang3.StringUtils;
+import java.util.function.Function;
+import javax.net.ssl.SSLException;
 import org.ehrbase.api.exception.InternalServerException;
 import org.ehrbase.openehr.sdk.validation.ConstraintViolation;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidation;
@@ -41,10 +45,12 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriComponents;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.resources.ConnectionProvider;
 import reactor.util.retry.Retry;
 
 /**
@@ -52,10 +58,10 @@ import reactor.util.retry.Retry;
  */
 public class FhirTerminologyValidation implements ExternalTerminologyValidation {
 
-    static final String SUPPORTS_CODE_SYS_TEMPL = "%s/CodeSystem?_summary=true&url=%s";
-    static final String SUPPORTS_VALUE_SET_TEMPL = "%s/ValueSet?_summary=true&url=%s";
-    private static final String VALUESET_VALIDATE_URL_TPL = "%s/ValueSet/$validate-code?url=%s&code=%s&system=%s";
-    private static final String CODESYSTEM_VALIDATE_URL_TPL = "%s/CodeSystem/$validate-code?url=%s&code=%s";
+    static final String SUPPORTS_CODE_SYS_TEMPL = "CodeSystem?_summary=true&url=%s";
+    static final String SUPPORTS_VALUE_SET_TEMPL = "ValueSet?_summary=true&url=%s";
+    private static final String VALUESET_VALIDATE_URL_TPL = "ValueSet/$validate-code?url=%s&code=%s&system=%s";
+    private static final String CODESYSTEM_VALIDATE_URL_TPL = "CodeSystem/$validate-code?url=%s&code=%s";
 
     public static final JsonPath VALIDATE_CODE_RESULT_JSON_PATH =
             JsonPath.compile("$.parameter[?(@.name==\"result\" && \"valueBoolean\" == true)].valueBoolean");
@@ -73,49 +79,72 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
 
     private static final Logger LOG = LoggerFactory.getLogger(FhirTerminologyValidation.class);
 
-    private final String baseUrl;
     private final boolean failOnError;
-    private final WebClient webClientTemplate;
+    private final WebClient webClient;
+    private final Retry retry;
 
-    public FhirTerminologyValidation(String baseUrl) {
-        this(baseUrl, true);
+    public FhirTerminologyValidation(ExternalTerminologyProviderProperties provider) {
+        this(provider, true);
     }
 
-    public FhirTerminologyValidation(String baseUrl, boolean failOnError) {
-        this(baseUrl, failOnError, WebClient.create());
+    public FhirTerminologyValidation(ExternalTerminologyProviderProperties provider, boolean failOnError) {
+        this(provider, failOnError, WebClient.create());
     }
 
-    public FhirTerminologyValidation(String baseUrl, boolean failOnError, WebClient webClient) {
-        this.baseUrl = baseUrl;
+    public FhirTerminologyValidation(
+            ExternalTerminologyProviderProperties provider, boolean failOnError, WebClient webClient) {
         this.failOnError = failOnError;
-        this.webClientTemplate = webClient;
+        this.retry = Retry.backoff(
+                        provider.getRetry().getAttempts(),
+                        Duration.ofMillis(provider.getRetry().getInitialBackoffMillis()))
+                .filter(FhirTerminologyValidation::mustRetry);
+        ConnectionProvider httpConnectionProvider = ConnectionProvider.builder(provider.getUrl())
+                .maxConnections(provider.getMaxConnections())
+                .pendingAcquireMaxCount(provider.getMaxPendingConnections())
+                .maxIdleTime(Duration.ofSeconds(provider.getMaxConnectionIdleTimeSeconds()))
+                .maxLifeTime(Duration.ofMinutes(provider.getMaxConnectionLifeTimeSeconds()))
+                .build();
+        HttpClient httpClient = HttpClient.create(httpConnectionProvider)
+                // TODO CDR-2273 metrics per valueset/codesystem still needed?
+                .metrics(provider.isEnableMetrics(), Function.identity())
+                .responseTimeout(Duration.ofSeconds(provider.getResponseTimeoutSeconds()));
+        this.webClient = webClient
+                .mutate()
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .defaultHeader(HttpHeaders.ACCEPT, FHIR_ACCEPT_HEADER)
+                .baseUrl(provider.getUrl())
+                .build();
     }
 
-    static String extractUrl(String referenceSetUri) {
-        if (referenceSetUri == null) {
+    private static boolean mustRetry(Throwable throwable) {
+        return switch (throwable) {
+            case TimeoutException _, ConnectException _, SSLException _ -> true;
+            case WebClientResponseException wcre -> mustRetry(wcre.getStatusCode());
+            case null, default -> false;
+        };
+    }
+
+    private static boolean mustRetry(HttpStatusCode statusCode) {
+        return switch (statusCode) {
+            case HttpStatus.BAD_GATEWAY,
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    HttpStatus.GATEWAY_TIMEOUT,
+                    HttpStatus.REQUEST_TIMEOUT,
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    HttpStatus.NOT_FOUND -> true;
+            default -> false;
+        };
+    }
+
+    static String extractUrl(String queryParamsString) {
+        if (queryParamsString == null) {
             return null;
         }
 
-        UriComponents uriComponents = UriComponentsBuilder.fromUriString("/?%s".formatted(referenceSetUri))
+        UriComponents uriComponents = UriComponentsBuilder.fromUriString("/?%s".formatted(queryParamsString))
                 .build();
         MultiValueMap<String, String> queryParams = uriComponents.getQueryParams();
         return queryParams.getFirst("url");
-    }
-
-    private WebClient buildRestClientCall(String urlString) {
-        String uriValue = uriTagValue(urlString);
-        // in the metrics call, uri in the uriTagValue function does not have the query parameters
-        //XXX CDR-2273 this means no re-use?
-
-        HttpClient client = HttpClient.create().metrics(true, _ -> uriValue).responseTimeout(Duration.ofSeconds(10));
-
-        return webClientTemplate
-                .mutate()
-                .clientConnector(new ReactorClientHttpConnector(client))
-                .defaultHeader(HttpHeaders.ACCEPT, FHIR_ACCEPT_HEADER)
-                //XXX CDR-2273 what is this for?
-                .baseUrl(urlString)
-                .build();
     }
 
     /**
@@ -123,12 +152,12 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
      * @param uri
      * @return
      */
+    // TODO CDR-2273 metrics per valueset/codesystem still needed?
     static String uriTagValue(String uri) {
         UriComponents uc = UriComponentsBuilder.fromUriString(uri).build();
         String path = uc.getPath();
-        uc.getQueryParams().keySet().removeIf(k ->!"url".equals(k));
 
-        //XXX CDR-2273 what format do we expect?? /fhir/CodeSystem/$validate-code?url=http://snomed.info/sct
+        // XXX CDR-2273 what format do we expect?? /fhir/CodeSystem/$validate-code?url=http://snomed.info/sct
         String terminologyUrl = uc.getQueryParams().getFirst("url");
         return terminologyUrl == null ? path : path + "?url=" + terminologyUrl;
     }
@@ -139,8 +168,9 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         return getAsMono(uri)
                 .map(FhirTerminologyValidation::toJsonDocument)
                 .blockOptional()
-                //XXX CDR-2273 In case the Mono errors, the original exception is thrown (wrapped in a RuntimeException if it was a checked exception)
-                .orElseThrow(() ->new InternalServerException("could not connect to external Terminology Server"));
+                // XXX CDR-2273 In case the Mono errors, the original exception is thrown (wrapped in a RuntimeException
+                // if it was a checked exception)
+                .orElseThrow(() -> new InternalServerException("could not connect to external Terminology Server"));
     }
 
     private static DocumentContext toJsonDocument(ResponseEntity<String> respEntity) {
@@ -158,17 +188,8 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         }
     }
 
-    private static final class InternalRetryableException extends RuntimeException{}
-
     private Mono<ResponseEntity<String>> getAsMono(String uri) {
-        WebClient client = buildRestClientCall(uri);
-        return client.get()
-                .uri(uri)
-                .retrieve()
-                .onStatus(FhirTerminologyValidation::mustRetry, _ -> Mono.error(InternalRetryableException::new))
-                .toEntity(String.class)
-                .retryWhen(
-                        Retry.backoff(8, Duration.ofMillis(20)).filter(FhirTerminologyValidation::mustRetry));
+        return webClient.get().uri(uri).retrieve().toEntity(String.class).retryWhen(retry);
     }
 
     private boolean isValidTerminology(String url) {
@@ -181,28 +202,33 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
 
     @Override
     public boolean supports(TerminologyParam param) {
-        return Optional.ofNullable(param)
-                .map(TerminologyParam::serviceApi)
-                .filter(this::isValidTerminology)
-                .map(_ -> extractUrl(param.parameter()))
-                .map(urlParam -> switch (param.resouceType()) {
-                    case VALUE_SET -> SUPPORTS_VALUE_SET_TEMPL.formatted(baseUrl, urlParam);
-                    case CODE_SYSTEM -> SUPPORTS_CODE_SYS_TEMPL.formatted(baseUrl, urlParam);
-                })
-                .map(url -> {
-                    try {
-                        return internalGet(url);
-                    } catch (WebClientException e) {
-                        if (failOnError) {
-                            throw new ExternalTerminologyValidationException(ERR_SUPPORTS.formatted(url), e);
-                        }
-                        LOG.warn("The following error occurred: {}", e.getMessage());
-                        return null;
-                    }
-                })
-                .map(doc -> doc.read(SUPPORTS_TOTAL_JSON_PATH, int.class))
-                .filter(t -> t > 0)
-                .isPresent();
+        Optional<TerminologyParam> paramOptional = Optional.ofNullable(param);
+        return paramOptional
+                        .map(TerminologyParam::serviceApi)
+                        .filter(this::isValidTerminology)
+                        .isPresent()
+                && paramOptional
+                        .map(TerminologyParam::parameter)
+                        .map(FhirTerminologyValidation::extractUrl)
+                        .filter(Objects::nonNull)
+                        .map(urlParam -> switch (param.resouceType()) {
+                            case VALUE_SET -> SUPPORTS_VALUE_SET_TEMPL.formatted(urlParam);
+                            case CODE_SYSTEM -> SUPPORTS_CODE_SYS_TEMPL.formatted(urlParam);
+                        })
+                        .map(url -> {
+                            try {
+                                return internalGet(url);
+                            } catch (WebClientException e) {
+                                if (failOnError) {
+                                    throw new ExternalTerminologyValidationException(ERR_SUPPORTS.formatted(url), e);
+                                }
+                                LOG.warn("The following error occurred: {}", e.getMessage());
+                                return null;
+                            }
+                        })
+                        .map(doc -> doc.read(SUPPORTS_TOTAL_JSON_PATH, int.class))
+                        .filter(t -> t > 0)
+                        .isPresent();
     }
 
     @Override
@@ -215,16 +241,6 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         return validateCode(url, param.codePhrase(), param.resouceType());
     }
 
-    static String guaranteePrefix(String prefix, String str) {
-        if (StringUtils.isEmpty(str)) {
-            return null;
-        } else if (str.contains(prefix)) {
-            return str;
-        } else {
-            return prefix + str;
-        }
-    }
-
     private ConstraintViolation validateCode(
             String fhirTerminologyUri, CodePhrase codePhrase, TerminologyParam.ResouceType resouceType) {
         String code = codePhrase.getCodeString();
@@ -233,9 +249,9 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                 switch (resouceType) {
                     case VALUE_SET -> {
                         TerminologyId system = codePhrase.getTerminologyId();
-                        yield VALUESET_VALIDATE_URL_TPL.formatted(baseUrl, fhirTerminologyUri, code, system);
+                        yield VALUESET_VALIDATE_URL_TPL.formatted(fhirTerminologyUri, code, system);
                     }
-                    case CODE_SYSTEM -> CODESYSTEM_VALIDATE_URL_TPL.formatted(baseUrl, fhirTerminologyUri, code);
+                    case CODE_SYSTEM -> CODESYSTEM_VALIDATE_URL_TPL.formatted(fhirTerminologyUri, code);
                 };
 
         DocumentContext context;
@@ -256,25 +272,5 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         }
 
         return null;
-    }
-
-
-    private static boolean mustRetry(Throwable throwable) {
-        return switch (throwable) {
-            case InternalRetryableException _ -> true;
-            case null, default -> false;
-        };
-    }
-
-    static boolean mustRetry(HttpStatusCode statusCode) {
-        return switch(statusCode) {
-            case HttpStatus.BAD_GATEWAY,
-                 HttpStatus.INTERNAL_SERVER_ERROR,
-                 HttpStatus.GATEWAY_TIMEOUT,
-                 HttpStatus.REQUEST_TIMEOUT,
-                 HttpStatus.TOO_MANY_REQUESTS,
-                 HttpStatus.NOT_FOUND -> true;
-            default -> false;
-        };
     }
 }

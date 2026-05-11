@@ -33,6 +33,7 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import net.java.quickcheck.generator.PrimitiveGenerators;
 import org.ehrbase.openehr.sdk.validation.terminology.TerminologyParam;
+import org.ehrbase.service.validation.ExternalTerminologyProviderProperties.ProviderType;
 import org.hl7.fhir.r4.model.ValueSet;
 import org.hl7.fhir.r4.model.ValueSet.ValueSetExpansionComponent;
 import org.hl7.fhir.r4.model.ValueSet.ValueSetExpansionContainsComponent;
@@ -43,20 +44,12 @@ import org.mockito.Mockito;
 class FhirTerminologyValidationTest {
 
     @Test
-    void guaranteePrefix() {
-        Assertions.assertEquals("url=ABC", FhirTerminologyValidation.guaranteePrefix("url=", "url=ABC"));
-        Assertions.assertEquals("url=ABC", FhirTerminologyValidation.guaranteePrefix("url=", "ABC"));
-        Assertions.assertNull(FhirTerminologyValidation.guaranteePrefix("url=", ""));
-        Assertions.assertEquals(
-                "xyz=XYZ&url=ABC", FhirTerminologyValidation.guaranteePrefix("url=", "xyz=XYZ&url=ABC"));
-    }
-
-    @Test
     void supports_ValidParams_ReturnsTrue() {
         String baseUrl = "http://terminology.local";
         String valueSetUrl = "http://snomed.info/sct?fhir_vs=ecl/%3C306206005";
 
-        FhirTerminologyValidation validation = spy(new FhirTerminologyValidation(baseUrl));
+        FhirTerminologyValidation validation = spy(new FhirTerminologyValidation(
+                new ExternalTerminologyProviderProperties(ProviderType.FHIR, baseUrl, false)));
         TerminologyParam param = TerminologyParam.ofFhir(
                 "//fhir.hl7.org/ValueSet/$expand?url=" + valueSetUrl + "&activeOnly=true", null);
 
@@ -68,13 +61,13 @@ class FhirTerminologyValidationTest {
 
         assertTrue(validation.supports(param));
 
-        verify(validation)
-                .internalGet(FhirTerminologyValidation.SUPPORTS_VALUE_SET_TEMPL.formatted(baseUrl, valueSetUrl));
+        verify(validation).internalGet(FhirTerminologyValidation.SUPPORTS_VALUE_SET_TEMPL.formatted(valueSetUrl));
     }
 
     @Test
     void supports_InvalidParams_ReturnsFalse() {
-        FhirTerminologyValidation validation = spy(new FhirTerminologyValidation("http://terminology.local"));
+        FhirTerminologyValidation validation = spy(new FhirTerminologyValidation(
+                new ExternalTerminologyProviderProperties(ProviderType.FHIR, "http://terminology.local", false)));
 
         assertFalse(
                 validation.supports(TerminologyParam.ofFhir("//fhir.hl7.org/ValueSet/$expand?activeOnly=true", null)));

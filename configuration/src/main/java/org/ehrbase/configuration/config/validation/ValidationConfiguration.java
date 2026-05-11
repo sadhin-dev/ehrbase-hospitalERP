@@ -25,6 +25,7 @@ import org.ehrbase.api.exception.InternalServerException;
 import org.ehrbase.cache.CacheProvider;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidation;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidationChain;
+import org.ehrbase.service.validation.ExternalTerminologyProviderProperties;
 import org.ehrbase.service.validation.FhirTerminologyValidation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,14 +68,15 @@ public class ValidationConfiguration {
             return nopTerminologyValidation();
         }
 
-        final Map<String, ExternalValidationProperties.Provider> providers = properties.getProvider();
+        final Map<String, ExternalTerminologyProviderProperties> providers = properties.getProvider();
 
         if (providers.isEmpty()) {
             throw new IllegalStateException("At least one external terminology provider must be defined "
                     + "if 'validation.external-validation.enabled' is set to 'true'");
         }
 
-        Stream<ExternalTerminologyValidation> validators = providers.entrySet().stream().map(this::buildExternalTerminologyValidation);
+        Stream<ExternalTerminologyValidation> validators =
+                providers.entrySet().stream().map(this::buildExternalTerminologyValidation);
 
         if (providers.size() == 1) {
             return validators.iterator().next();
@@ -84,10 +86,10 @@ public class ValidationConfiguration {
     }
 
     private ExternalTerminologyValidation buildExternalTerminologyValidation(
-            Map.Entry<String, ExternalValidationProperties.Provider> namedProvider) {
+            Map.Entry<String, ExternalTerminologyProviderProperties> namedProvider) {
 
         final String name = namedProvider.getKey();
-        final ExternalValidationProperties.Provider provider = namedProvider.getValue();
+        final ExternalTerminologyProviderProperties provider = namedProvider.getValue();
         String oauth2Client = provider.getOauth2Client();
 
         if (log.isInfoEnabled()) {
@@ -102,9 +104,9 @@ public class ValidationConfiguration {
                     sec);
         }
 
-        if (provider.getType() == ExternalValidationProperties.ProviderType.FHIR) {
+        if (provider.getType() == ExternalTerminologyProviderProperties.ProviderType.FHIR) {
             final WebClient webClient = buildWebClient(oauth2Client);
-            return fhirTerminologyValidation(provider.getUrl(), webClient);
+            return fhirTerminologyValidation(provider, webClient);
 
         } else {
             throw new IllegalArgumentException("Invalid provider type: " + provider.getType());
@@ -132,8 +134,9 @@ public class ValidationConfiguration {
         return new NopExternalTerminologyValidation(ERR_MSG);
     }
 
-    private FhirTerminologyValidation fhirTerminologyValidation(String url, WebClient webClient) {
-        return new FhirTerminologyValidation(url, properties.isFailOnError(), webClient) {
+    private FhirTerminologyValidation fhirTerminologyValidation(
+            ExternalTerminologyProviderProperties provider, WebClient webClient) {
+        return new FhirTerminologyValidation(provider, properties.isFailOnError(), webClient) {
 
             @Override
             protected DocumentContext internalGet(String uri) throws WebClientException {
