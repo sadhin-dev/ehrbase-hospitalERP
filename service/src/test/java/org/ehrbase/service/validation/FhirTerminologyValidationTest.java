@@ -37,7 +37,6 @@ import org.ehrbase.service.validation.ExternalTerminologyProviderProperties.Prov
 import org.hl7.fhir.r4.model.ValueSet;
 import org.hl7.fhir.r4.model.ValueSet.ValueSetExpansionComponent;
 import org.hl7.fhir.r4.model.ValueSet.ValueSetExpansionContainsComponent;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -76,29 +75,6 @@ class FhirTerminologyValidationTest {
                 null)));
 
         verify(validation, never()).internalGet(Mockito.anyString());
-    }
-
-    @Test
-    void testUriTagValueStripsCodeButKeepsTerminologyUrl() {
-        String basePath = "http://terminology.local";
-        Assertions.assertEquals(
-                "/fhir/CodeSystem/$validate-code?url=http://snomed.info/sct",
-                FhirTerminologyValidation.uriTagValue(
-                        basePath + "/fhir/CodeSystem/$validate-code?url=http://snomed.info/sct&code=12345"));
-
-        Assertions.assertEquals(
-                FhirTerminologyValidation.uriTagValue(
-                        basePath + "/fhir/CodeSystem/$validate-code?url=http://snomed.info/sct&code=A"),
-                FhirTerminologyValidation.uriTagValue(
-                        basePath + "/fhir/CodeSystem/$validate-code?url=http://snomed.info/sct&code=B"));
-
-        Assertions.assertNotEquals(
-                FhirTerminologyValidation.uriTagValue(
-                        basePath + "/fhir/ValueSet/$expand?url=https://hl7.org/fhir/ValueSet/icd-10"),
-                FhirTerminologyValidation.uriTagValue(
-                        basePath + "/fhir/ValueSet/$expand?url=https://hl7.org/fhir/ValueSet/administrative-gender"));
-
-        Assertions.assertEquals("/fhir/metadata", FhirTerminologyValidation.uriTagValue(basePath + "/fhir/metadata"));
     }
 
     @Test

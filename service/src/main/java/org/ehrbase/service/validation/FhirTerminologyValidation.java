@@ -104,7 +104,6 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                 .maxLifeTime(Duration.ofMinutes(provider.getMaxConnectionLifeTimeSeconds()))
                 .build();
         HttpClient httpClient = HttpClient.create(httpConnectionProvider)
-                // TODO CDR-2273 metrics per valueset/codesystem still needed?
                 .metrics(provider.isEnableMetrics(), Function.identity())
                 .responseTimeout(Duration.ofSeconds(provider.getResponseTimeoutSeconds()));
         this.webClient = webClient
@@ -144,21 +143,6 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                 .build();
         MultiValueMap<String, String> queryParams = uriComponents.getQueryParams();
         return queryParams.getFirst("url");
-    }
-
-    /**
-     * Include the url parameter in the metrics uri tag
-     * @param uri
-     * @return
-     */
-    // TODO CDR-2273 metrics per valueset/codesystem still needed?
-    static String uriTagValue(String uri) {
-        UriComponents uc = UriComponentsBuilder.fromUriString(uri).build();
-        String path = uc.getPath();
-
-        // XXX CDR-2273 what format do we expect?? /fhir/CodeSystem/$validate-code?url=http://snomed.info/sct
-        String terminologyUrl = uc.getQueryParams().getFirst("url");
-        return terminologyUrl == null ? path : path + "?url=" + terminologyUrl;
     }
 
     protected DocumentContext internalGet(String uri)
