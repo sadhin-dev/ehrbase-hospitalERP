@@ -20,8 +20,8 @@ package org.ehrbase.service.validation;
 public class ExternalTerminologyProviderProperties {
 
     public static class Retry {
-        private int attempts = 8;
-        private int initialBackoffMillis = 20;
+        private int attempts = 3;
+        private int initialBackoffMillis = 100;
 
         public int getAttempts() {
             return attempts;
