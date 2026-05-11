@@ -34,18 +34,18 @@ import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidat
 import org.ehrbase.openehr.sdk.validation.terminology.TerminologyParam;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClient.RequestBodyUriSpec;
 import org.springframework.web.reactive.function.client.WebClientException;
 import org.springframework.web.util.UriComponents;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
+import reactor.util.retry.Retry;
 
 /**
  * {@link ExternalTerminologyValidation} that supports FHIR terminology validation.
@@ -102,16 +102,19 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         return queryParams.getFirst("url");
     }
 
-    private WebClient buildRestClientCall(String url) {
-        String uriValue = uriTagValue(url);
+    private WebClient buildRestClientCall(String urlString) {
+        String uriValue = uriTagValue(urlString);
         // in the metrics call, uri in the uriTagValue function does not have the query parameters
+        //XXX CDR-2273 this means no re-use?
+
         HttpClient client = HttpClient.create().metrics(true, _ -> uriValue).responseTimeout(Duration.ofSeconds(10));
 
         return webClientTemplate
                 .mutate()
                 .clientConnector(new ReactorClientHttpConnector(client))
-                .baseUrl(url)
                 .defaultHeader(HttpHeaders.ACCEPT, FHIR_ACCEPT_HEADER)
+                //XXX CDR-2273 what is this for?
+                .baseUrl(urlString)
                 .build();
     }
 
@@ -123,29 +126,49 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
     static String uriTagValue(String uri) {
         UriComponents uc = UriComponentsBuilder.fromUriString(uri).build();
         String path = uc.getPath();
+        uc.getQueryParams().keySet().removeIf(k ->!"url".equals(k));
+
+        //XXX CDR-2273 what format do we expect?? /fhir/CodeSystem/$validate-code?url=http://snomed.info/sct
         String terminologyUrl = uc.getQueryParams().getFirst("url");
         return terminologyUrl == null ? path : path + "?url=" + terminologyUrl;
     }
 
     protected DocumentContext internalGet(String uri)
             throws WebClientException, ExternalTerminologyValidationException {
+        // timeout is managed by web client
+        return getAsMono(uri)
+                .map(FhirTerminologyValidation::toJsonDocument)
+                .blockOptional()
+                //XXX CDR-2273 In case the Mono errors, the original exception is thrown (wrapped in a RuntimeException if it was a checked exception)
+                .orElseThrow(() ->new InternalServerException("could not connect to external Terminology Server"));
+    }
 
-        WebClient client = buildRestClientCall(uri);
-        RequestBodyUriSpec method = client.method(HttpMethod.GET);
-        Mono<ResponseEntity<String>> mono = method.retrieve().toEntity(String.class);
-        ResponseEntity<String> respEntity = Optional.ofNullable(mono.block())
-                .orElseThrow(() -> new InternalServerException("could not connect to external Terminology Server"));
-
-        String responseBody = respEntity.getBody();
+    private static DocumentContext toJsonDocument(ResponseEntity<String> respEntity) {
+        if (respEntity == null) {
+            return null;
+        }
 
         HttpStatusCode statusCode = respEntity.getStatusCode();
         if (statusCode.is2xxSuccessful()) {
-            return JsonPath.parse(responseBody);
+            return JsonPath.parse(respEntity.getBody());
         } else {
             throw new ExternalTerminologyValidationException(
                     "Error response received from the terminology server. HTTP status: %s. Body: %s"
-                            .formatted(statusCode, responseBody));
+                            .formatted(statusCode, respEntity.getBody()));
         }
+    }
+
+    private static final class InternalRetryableException extends RuntimeException{}
+
+    private Mono<ResponseEntity<String>> getAsMono(String uri) {
+        WebClient client = buildRestClientCall(uri);
+        return client.get()
+                .uri(uri)
+                .retrieve()
+                .onStatus(FhirTerminologyValidation::mustRetry, _ -> Mono.error(InternalRetryableException::new))
+                .toEntity(String.class)
+                .retryWhen(
+                        Retry.backoff(8, Duration.ofMillis(20)).filter(FhirTerminologyValidation::mustRetry));
     }
 
     private boolean isValidTerminology(String url) {
@@ -233,5 +256,25 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         }
 
         return null;
+    }
+
+
+    private static boolean mustRetry(Throwable throwable) {
+        return switch (throwable) {
+            case InternalRetryableException _ -> true;
+            case null, default -> false;
+        };
+    }
+
+    static boolean mustRetry(HttpStatusCode statusCode) {
+        return switch(statusCode) {
+            case HttpStatus.BAD_GATEWAY,
+                 HttpStatus.INTERNAL_SERVER_ERROR,
+                 HttpStatus.GATEWAY_TIMEOUT,
+                 HttpStatus.REQUEST_TIMEOUT,
+                 HttpStatus.TOO_MANY_REQUESTS,
+                 HttpStatus.NOT_FOUND -> true;
+            default -> false;
+        };
     }
 }
