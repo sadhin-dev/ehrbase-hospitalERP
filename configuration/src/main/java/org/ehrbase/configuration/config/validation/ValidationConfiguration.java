@@ -20,6 +20,7 @@ package org.ehrbase.configuration.config.validation;
 import com.jayway.jsonpath.DocumentContext;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.ehrbase.api.exception.InternalServerException;
 import org.ehrbase.cache.CacheProvider;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidation;
@@ -45,7 +46,7 @@ import org.springframework.web.reactive.function.client.WebClientException;
 public class ValidationConfiguration {
 
     private static final String ERR_MSG = "External terminology validation is disabled, consider to enable it";
-    private final Logger logger = LoggerFactory.getLogger(ValidationConfiguration.class);
+    private static final Logger log = LoggerFactory.getLogger(ValidationConfiguration.class);
     private final ExternalValidationProperties properties;
     private final CacheProvider cacheProvider;
     private final OAuth2AuthorizedClientManager authorizedClientManager;
@@ -62,7 +63,7 @@ public class ValidationConfiguration {
     @Bean
     public ExternalTerminologyValidation externalTerminologyValidator() {
         if (!properties.isEnabled()) {
-            logger.warn(ERR_MSG);
+            log.warn(ERR_MSG);
             return nopTerminologyValidation();
         }
 
@@ -71,15 +72,14 @@ public class ValidationConfiguration {
         if (providers.isEmpty()) {
             throw new IllegalStateException("At least one external terminology provider must be defined "
                     + "if 'validation.external-validation.enabled' is set to 'true'");
-        } else if (providers.size() == 1) {
-            return buildExternalTerminologyValidation(
-                    providers.entrySet().iterator().next());
+        }
+
+        Stream<ExternalTerminologyValidation> validators = providers.entrySet().stream().map(this::buildExternalTerminologyValidation);
+
+        if (providers.size() == 1) {
+            return validators.iterator().next();
         } else {
-            ExternalTerminologyValidationChain chain = new ExternalTerminologyValidationChain();
-            for (Map.Entry<String, ExternalValidationProperties.Provider> namedProvider : providers.entrySet()) {
-                chain.addExternalTerminologyValidationSupport(buildExternalTerminologyValidation(namedProvider));
-            }
-            return chain;
+            return new ExternalTerminologyValidationChain(validators.toList());
         }
     }
 
@@ -90,21 +90,25 @@ public class ValidationConfiguration {
         final ExternalValidationProperties.Provider provider = namedProvider.getValue();
         String oauth2Client = provider.getOauth2Client();
 
-        logger.info(
-                "Initializing '{}' external terminology provider (type: {}) at {} {}",
-                name,
-                provider.getType(),
-                provider.getUrl(),
-                Optional.ofNullable(oauth2Client)
-                        .map(" secured by oauth2 client '%s'"::formatted)
-                        .orElse(""));
-
-        final WebClient webClient = buildWebClient(oauth2Client);
+        if (log.isInfoEnabled()) {
+            String sec = Optional.ofNullable(oauth2Client)
+                    .map(" secured by oauth2 client '%s'"::formatted)
+                    .orElse("");
+            log.info(
+                    "Initializing '{}' external terminology provider (type: {}) at {}{}",
+                    name,
+                    provider.getType(),
+                    provider.getUrl(),
+                    sec);
+        }
 
         if (provider.getType() == ExternalValidationProperties.ProviderType.FHIR) {
+            final WebClient webClient = buildWebClient(oauth2Client);
             return fhirTerminologyValidation(provider.getUrl(), webClient);
+
+        } else {
+            throw new IllegalArgumentException("Invalid provider type: " + provider.getType());
         }
-        throw new IllegalArgumentException("Invalid provider type: " + provider.getType());
     }
 
     private WebClient buildWebClient(String clientId) {
