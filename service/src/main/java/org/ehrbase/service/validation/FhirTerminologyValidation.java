@@ -27,7 +27,6 @@ import java.net.ConnectException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import javax.net.ssl.SSLException;
@@ -210,7 +209,6 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                 && paramOptional
                         .map(TerminologyParam::parameter)
                         .map(FhirTerminologyValidation::extractUrl)
-                        .filter(Objects::nonNull)
                         .map(urlParam -> switch (param.resouceType()) {
                             case VALUE_SET -> SUPPORTS_VALUE_SET_TEMPL.formatted(urlParam);
                             case CODE_SYSTEM -> SUPPORTS_CODE_SYS_TEMPL.formatted(urlParam);
