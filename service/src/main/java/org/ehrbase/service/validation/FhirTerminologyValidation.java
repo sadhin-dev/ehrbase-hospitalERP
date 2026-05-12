@@ -47,6 +47,7 @@ import org.springframework.web.reactive.function.client.WebClientException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriComponents;
 import org.springframework.web.util.UriComponentsBuilder;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.resources.ConnectionProvider;
@@ -63,7 +64,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
     private static final String CODESYSTEM_VALIDATE_URL_TPL = "CodeSystem/$validate-code?url=%s&code=%s";
 
     public static final JsonPath VALIDATE_CODE_RESULT_JSON_PATH =
-            JsonPath.compile("$.parameter[?(@.name==\"result\" && \"valueBoolean\" == true)].valueBoolean");
+            JsonPath.compile("$.parameter[?(@.name==\"result\" && @.valueBoolean == true)].valueBoolean");
     public static final JsonPath VALIDATE_CODE_MESSAGE_JSON_PATH =
             JsonPath.compile("$.parameter[?(@.name==\"message\")].valueString");
     public static final JsonPath SUPPORTS_TOTAL_JSON_PATH = JsonPath.compile("$.total");
@@ -148,12 +149,18 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
     protected DocumentContext internalGet(String uri)
             throws WebClientException, ExternalTerminologyValidationException {
         // timeout is managed by web client
-        return getAsMono(uri)
-                .map(FhirTerminologyValidation::toJsonDocument)
-                .blockOptional()
-                // XXX CDR-2273 In case the Mono errors, the original exception is thrown (wrapped in a RuntimeException
-                // if it was a checked exception)
-                .orElseThrow(() -> new InternalServerException("could not connect to external Terminology Server"));
+        Mono<DocumentContext> coldMono = getAsMono(uri).map(FhirTerminologyValidation::toJsonDocument);
+        try {
+            return coldMono.blockOptional()
+                    .orElseThrow(() -> new InternalServerException("could not connect to external Terminology Server"));
+        } catch (IllegalStateException e) {
+            // unwrap WebClientException
+            if (Exceptions.isRetryExhausted(e) && e.getCause() instanceof WebClientException wce) {
+                throw wce;
+            } else {
+                throw e;
+            }
+        }
     }
 
     private static DocumentContext toJsonDocument(ResponseEntity<String> respEntity) {
