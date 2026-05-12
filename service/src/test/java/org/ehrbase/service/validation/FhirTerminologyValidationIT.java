@@ -297,12 +297,38 @@ class FhirTerminologyValidationIT {
     }
 
     // -------------------------------------------------------------------------
+    // test retries
+    // -------------------------------------------------------------------------
+
+    @Test
+    void validate_retry() {
+        enqueueErrors(502);
+        mockWebServer.enqueue(fhirJsonResponse(FHIR_PARAMETERS_VALID));
+
+        FhirTerminologyValidation validation = buildValidation(true);
+
+        assertNull(validation.validate(codeSystemParam()));
+        assertThat(mockWebServer.getRequestCount()).isEqualTo(2);
+    }
+
+    @Test
+    void supports_retry() {
+        enqueueErrors(502);
+        mockWebServer.enqueue(fhirJsonResponse(FHIR_BUNDLE_TOTAL_1));
+
+        FhirTerminologyValidation validation = buildValidation(true);
+
+        assertTrue(validation.supports(codeSystemParam()));
+        assertThat(mockWebServer.getRequestCount()).isEqualTo(2);
+    }
+
+    // -------------------------------------------------------------------------
     // validate() – error handling
     // -------------------------------------------------------------------------
 
     @Test
     void validate_ServerError_FailOnError_ThrowsException() {
-        enqueueErrors(500, 500, 500, 500);
+        enqueueErrors(500, 500);
 
         FhirTerminologyValidation validation = buildValidation(true);
         TerminologyParam param = codeSystemParam();

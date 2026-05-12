@@ -21,6 +21,7 @@ import com.jayway.jsonpath.DocumentContext;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
+import org.apache.commons.lang3.tuple.Pair;
 import org.ehrbase.api.exception.InternalServerException;
 import org.ehrbase.cache.CacheProvider;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidation;
@@ -106,7 +107,7 @@ public class ValidationConfiguration {
 
         if (provider.getType() == ExternalTerminologyProviderProperties.ProviderType.FHIR) {
             final WebClient webClient = buildWebClient(oauth2Client);
-            return fhirTerminologyValidation(provider, webClient);
+            return fhirTerminologyValidation(name, provider, webClient);
 
         } else {
             throw new IllegalArgumentException("Invalid provider type: " + provider.getType());
@@ -135,14 +136,14 @@ public class ValidationConfiguration {
     }
 
     private FhirTerminologyValidation fhirTerminologyValidation(
-            ExternalTerminologyProviderProperties provider, WebClient webClient) {
+            String name, ExternalTerminologyProviderProperties provider, WebClient webClient) {
         return new FhirTerminologyValidation(provider, properties.isFailOnError(), webClient) {
 
             @Override
             protected DocumentContext internalGet(String uri) throws WebClientException {
                 try {
                     return CacheProvider.EXTERNAL_FHIR_TERMINOLOGY_CACHE.get(
-                            cacheProvider, uri, () -> super.internalGet(uri));
+                            cacheProvider, Pair.of(name, uri), () -> super.internalGet(uri));
                 } catch (Cache.ValueRetrievalException e) {
                     final Throwable cause = e.getCause();
                     if (cause instanceof WebClientException wce) {

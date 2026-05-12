@@ -117,8 +117,8 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
 
     private static boolean mustRetry(Throwable throwable) {
         return switch (throwable) {
-            case TimeoutException _, ConnectException _, SSLException _ -> true;
             case WebClientResponseException wcre -> mustRetry(wcre.getStatusCode());
+            case WebClientException _, TimeoutException _, ConnectException _, SSLException _ -> true;
             case null, default -> false;
         };
     }
@@ -149,11 +149,12 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
     protected DocumentContext internalGet(String uri)
             throws WebClientException, ExternalTerminologyValidationException {
         // timeout is managed by web client
-        Mono<DocumentContext> coldMono = getAsMono(uri).map(FhirTerminologyValidation::toJsonDocument);
         try {
-            return coldMono.blockOptional()
+            return getAsMono(uri)
+                    .map(FhirTerminologyValidation::toJsonDocument)
+                    .blockOptional()
                     .orElseThrow(() -> new InternalServerException("could not connect to external Terminology Server"));
-        } catch (IllegalStateException e) {
+        } catch (RuntimeException e) {
             // unwrap WebClientException
             if (Exceptions.isRetryExhausted(e) && e.getCause() instanceof WebClientException wce) {
                 throw wce;
