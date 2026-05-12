@@ -116,29 +116,6 @@ class FhirTerminologyValidationIT {
         mockWebServer.shutdown();
     }
 
-    private FhirTerminologyValidation buildValidation(boolean failOnError) {
-        ExternalTerminologyProviderProperties props =
-                new ExternalTerminologyProviderProperties(ProviderType.FHIR, baseUrl, false);
-        props.getRetry().setInitialBackoffMillis(2);
-        props.getRetry().setAttempts(1);
-        // Use a plain WebClient; the constructor will mutate it with the base URL and headers
-        return new FhirTerminologyValidation(props, failOnError, WebClient.create());
-    }
-
-    private MockResponse fhirJsonResponse(String body) {
-        return new MockResponse()
-                .setResponseCode(200)
-                .addHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .setBody(body);
-    }
-
-    private MockResponse errorResponse(int statusCode) {
-        return new MockResponse()
-                .setResponseCode(statusCode)
-                .addHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .setBody("{\"resourceType\":\"OperationOutcome\"}");
-    }
-
     // -------------------------------------------------------------------------
     // supports() – ValueSet
     // -------------------------------------------------------------------------
@@ -148,17 +125,15 @@ class FhirTerminologyValidationIT {
         mockWebServer.enqueue(fhirJsonResponse(FHIR_BUNDLE_TOTAL_1));
 
         FhirTerminologyValidation validation = buildValidation(true);
-        String valueSetUrl = "http://snomed.info/sct?fhir_vs=ecl/%3C306206005";
-        TerminologyParam param = TerminologyParam.ofFhir(
-                "//fhir.hl7.org/ValueSet/$expand?url=" + valueSetUrl + "&activeOnly=true", null);
 
-        assertTrue(validation.supports(param));
+        assertTrue(validation.supports(valueSetParam()));
 
         RecordedRequest request = takeRequest();
         assertThat(request.getPath())
                 .contains("ValueSet")
                 .contains("_summary=true")
                 .contains("url=");
+
         assertFhirHeader(request);
     }
 
@@ -172,11 +147,8 @@ class FhirTerminologyValidationIT {
         mockWebServer.enqueue(fhirJsonResponse(FHIR_BUNDLE_TOTAL_0));
 
         FhirTerminologyValidation validation = buildValidation(true);
-        String valueSetUrl = "http://snomed.info/sct?fhir_vs=ecl/%3C306206005";
-        TerminologyParam param = TerminologyParam.ofFhir(
-                "//fhir.hl7.org/ValueSet/$expand?url=" + valueSetUrl + "&activeOnly=true", null);
 
-        assertFalse(validation.supports(param));
+        assertFalse(validation.supports(valueSetParam()));
     }
 
     @Test
@@ -184,11 +156,8 @@ class FhirTerminologyValidationIT {
         mockWebServer.enqueue(fhirJsonResponse(FHIR_BUNDLE_TOTAL_1));
 
         FhirTerminologyValidation validation = buildValidation(true);
-        String codeSystemUrl = "http://hl7.org/fhir/observation-status";
-        TerminologyParam param =
-                TerminologyParam.ofFhir("//fhir.hl7.org/CodeSystem/$validate-code?url=" + codeSystemUrl, null);
 
-        assertTrue(validation.supports(param));
+        assertTrue(validation.supports(codeSystemParam()));
 
         RecordedRequest request = takeRequest();
         assertThat(request.getPath()).contains("CodeSystem").contains("_summary=true");
@@ -197,8 +166,8 @@ class FhirTerminologyValidationIT {
     @Test
     void supports_UnsupportedServiceApi_ReturnsFalseWithoutHttpCall() {
         FhirTerminologyValidation validation = buildValidation(true);
-        TerminologyParam param = TerminologyParam.ofFhir(
-                "//invalid.api/ValueSet/$expand?url=http://snomed.info/sct&activeOnly=true", null);
+        TerminologyParam param =
+                TerminologyParam.ofFhir("//invalid.api/ValueSet/$expand?url=http://snomed.info/sct", null);
 
         assertFalse(validation.supports(param));
         // No HTTP request should have been made
@@ -208,7 +177,7 @@ class FhirTerminologyValidationIT {
     @Test
     void supports_MissingUrlParam_ReturnsFalseWithoutHttpCall() {
         FhirTerminologyValidation validation = buildValidation(true);
-        TerminologyParam param = TerminologyParam.ofFhir("//fhir.hl7.org/ValueSet/$expand?activeOnly=true", null);
+        TerminologyParam param = TerminologyParam.ofFhir("//fhir.hl7.org/ValueSet/$expand", null);
 
         assertFalse(validation.supports(param));
         assertThat(mockWebServer.getRequestCount()).isZero();
@@ -219,10 +188,7 @@ class FhirTerminologyValidationIT {
     void supports_NonSuccessHttpStatusCodes_FailOnError_ThrowsException(int errorCode) {
         enqueueErrors(errorCode, errorCode);
         FhirTerminologyValidation validation = buildValidation(true);
-
-        String valueSetUrl = "http://snomed.info/sct?fhir_vs=ecl/%3C306206005";
-        TerminologyParam param = TerminologyParam.ofFhir("//fhir.hl7.org/ValueSet/$expand?url=" + valueSetUrl, null);
-
+        TerminologyParam param = valueSetParam();
         assertThatThrownBy(() -> validation.supports(param)).isInstanceOf(ExternalTerminologyValidationException.class);
     }
 
@@ -231,11 +197,7 @@ class FhirTerminologyValidationIT {
     void supports_NonSuccessHttpStatusCodes_FailOnErrorFalse_ReturnsFalse(int errorCode) {
         enqueueErrors(errorCode, errorCode);
         FhirTerminologyValidation validation = buildValidation(false);
-
-        String valueSetUrl = "http://snomed.info/sct?fhir_vs=ecl/%3C306206005";
-        TerminologyParam param = TerminologyParam.ofFhir("//fhir.hl7.org/ValueSet/$expand?url=" + valueSetUrl, null);
-
-        assertFalse(validation.supports(param));
+        assertFalse(validation.supports(valueSetParam()));
     }
 
     // -------------------------------------------------------------------------
@@ -247,13 +209,8 @@ class FhirTerminologyValidationIT {
         mockWebServer.enqueue(fhirJsonResponse(FHIR_PARAMETERS_VALID));
 
         FhirTerminologyValidation validation = buildValidation(true);
-        String codeSystemUrl = "http://hl7.org/fhir/observation-status";
-        // serviceApi contains "CodeSystem" → resouceType = CODE_SYSTEM; query string is the parameter()
-        TerminologyParam param = TerminologyParam.ofFhir(
-                "//fhir.hl7.org/CodeSystem/$validate-code?url=" + codeSystemUrl,
-                new CodePhrase(new TerminologyId("http://hl7.org/fhir/observation-status"), "final"));
 
-        ConstraintViolation result = validation.validate(param);
+        ConstraintViolation result = validation.validate(codeSystemParam());
 
         assertNull(result);
 
@@ -262,6 +219,8 @@ class FhirTerminologyValidationIT {
                 .contains("CodeSystem/$validate-code")
                 .contains("url=")
                 .contains("code=final");
+
+        assertFhirHeader(request);
     }
 
     @Test
@@ -269,12 +228,8 @@ class FhirTerminologyValidationIT {
         mockWebServer.enqueue(fhirJsonResponse(FHIR_PARAMETERS_INVALID));
 
         FhirTerminologyValidation validation = buildValidation(true);
-        String codeSystemUrl = "http://hl7.org/fhir/observation-status";
-        TerminologyParam param = TerminologyParam.ofFhir(
-                "//fhir.hl7.org/CodeSystem/$validate-code?url=" + codeSystemUrl,
-                new CodePhrase(new TerminologyId("http://hl7.org/fhir/observation-status"), "final"));
 
-        ConstraintViolation result = validation.validate(param);
+        ConstraintViolation result = validation.validate(codeSystemParam());
 
         assertThat(result).isNotNull();
         assertThat(result.getMessage()).contains("Unknown code 'final' in CodeSystem");
@@ -285,11 +240,8 @@ class FhirTerminologyValidationIT {
         mockWebServer.enqueue(fhirJsonResponse(FHIR_PARAMETERS_INVALID_MULTI_MESSAGE));
 
         FhirTerminologyValidation validation = buildValidation(true);
-        TerminologyParam param = TerminologyParam.ofFhir(
-                "//fhir.hl7.org/CodeSystem/$validate-code?url=http://hl7.org/fhir/observation-status",
-                new CodePhrase(new TerminologyId("http://hl7.org/fhir/observation-status"), "final"));
 
-        ConstraintViolation result = validation.validate(param);
+        ConstraintViolation result = validation.validate(codeSystemParam());
 
         assertThat(result).isNotNull();
         assertThat(result.getMessage()).isEqualTo("First error; Second error");
@@ -319,12 +271,8 @@ class FhirTerminologyValidationIT {
         mockWebServer.enqueue(fhirJsonResponse(FHIR_PARAMETERS_VALID));
 
         FhirTerminologyValidation validation = buildValidation(true);
-        String valueSetUrl = "http://hl7.org/fhir/ValueSet/observation-status";
-        TerminologyParam param = TerminologyParam.ofFhir(
-                "//fhir.hl7.org/ValueSet/$validate-code?url=" + valueSetUrl,
-                new CodePhrase(new TerminologyId("http://hl7.org/fhir/observation-status"), "final"));
 
-        ConstraintViolation result = validation.validate(param);
+        ConstraintViolation result = validation.validate(valueSetParam());
 
         assertNull(result);
 
@@ -341,9 +289,8 @@ class FhirTerminologyValidationIT {
         mockWebServer.enqueue(fhirJsonResponse(FHIR_PARAMETERS_INVALID));
 
         FhirTerminologyValidation validation = buildValidation(true);
-        TerminologyParam param = sampleValueSetTerminologyParam();
 
-        ConstraintViolation result = validation.validate(param);
+        ConstraintViolation result = validation.validate(valueSetParam());
 
         assertThat(result).isNotNull();
         assertThat(result.getMessage()).contains("Unknown code 'final' in CodeSystem");
@@ -358,24 +305,11 @@ class FhirTerminologyValidationIT {
         enqueueErrors(500, 500, 500, 500);
 
         FhirTerminologyValidation validation = buildValidation(true);
-        TerminologyParam param = sampleCodeSystemTerminologyParam();
+        TerminologyParam param = codeSystemParam();
 
         assertThatThrownBy(() -> validation.validate(param))
                 .isInstanceOf(ExternalTerminologyValidationException.class)
                 .hasMessageContaining("$validate-code");
-    }
-
-    private static TerminologyParam sampleValueSetTerminologyParam() {
-        String valueSetUrl = "http://hl7.org/fhir/ValueSet/observation-status";
-        return TerminologyParam.ofFhir(
-                "//fhir.hl7.org/ValueSet/$validate-code?url=" + valueSetUrl,
-                new CodePhrase(new TerminologyId("http://hl7.org/fhir/observation-status"), "final"));
-    }
-
-    private static TerminologyParam sampleCodeSystemTerminologyParam() {
-        return TerminologyParam.ofFhir(
-                "//fhir.hl7.org/CodeSystem/$validate-code?url=http://hl7.org/fhir/observation-status",
-                new CodePhrase(new TerminologyId("http://hl7.org/fhir/observation-status"), "final"));
     }
 
     @ParameterizedTest
@@ -383,9 +317,8 @@ class FhirTerminologyValidationIT {
     void validate_NonSuccessHttpStatusCodes_FailOnErrorFalse_ReturnsNull(int errorCode) {
         enqueueErrors(errorCode, errorCode);
         FhirTerminologyValidation validation = buildValidation(false);
-        TerminologyParam param = sampleCodeSystemTerminologyParam();
 
-        assertNull(validation.validate(param));
+        assertNull(validation.validate(codeSystemParam()));
     }
 
     @ParameterizedTest
@@ -393,25 +326,50 @@ class FhirTerminologyValidationIT {
     void validate_NonSuccessHttpStatusCodes(int errorCode) {
         enqueueErrors(errorCode, errorCode);
         FhirTerminologyValidation validation = buildValidation(true);
-        TerminologyParam param = sampleCodeSystemTerminologyParam();
+        TerminologyParam param = codeSystemParam();
 
         assertThatThrownBy(() -> validation.validate(param)).isInstanceOf(ExternalTerminologyValidationException.class);
     }
 
     // -------------------------------------------------------------------------
-    // Accept header verification
+    // Helpers
     // -------------------------------------------------------------------------
 
-    @Test
-    void allRequests_SendFhirAcceptHeader() {
-        mockWebServer.enqueue(fhirJsonResponse(FHIR_PARAMETERS_VALID));
+    private FhirTerminologyValidation buildValidation(boolean failOnError) {
+        ExternalTerminologyProviderProperties props =
+                new ExternalTerminologyProviderProperties(ProviderType.FHIR, baseUrl, false);
+        props.setResponseTimeoutSeconds(5);
+        props.getRetry().setInitialBackoffMillis(2);
+        props.getRetry().setAttempts(1);
+        // Use a plain WebClient; the constructor will mutate it with the base URL and headers
+        return new FhirTerminologyValidation(props, failOnError, WebClient.create());
+    }
 
-        FhirTerminologyValidation validation = buildValidation(true);
-        TerminologyParam param = sampleCodeSystemTerminologyParam();
-        validation.validate(param);
+    private MockResponse fhirJsonResponse(String body) {
+        return new MockResponse()
+                .setResponseCode(200)
+                .addHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .setBody(body);
+    }
 
-        RecordedRequest request = takeRequest();
-        assertFhirHeader(request);
+    private MockResponse errorResponse(int statusCode) {
+        return new MockResponse()
+                .setResponseCode(statusCode)
+                .addHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .setBody("{\"resourceType\":\"OperationOutcome\"}");
+    }
+
+    private static TerminologyParam valueSetParam() {
+        String valueSetUrl = "http://hl7.org/fhir/ValueSet/observation-status";
+        return TerminologyParam.ofFhir(
+                "//fhir.hl7.org/ValueSet/$expand?url=" + valueSetUrl,
+                new CodePhrase(new TerminologyId("http://hl7.org/fhir/observation-status"), "final"));
+    }
+
+    private static TerminologyParam codeSystemParam() {
+        return TerminologyParam.ofFhir(
+                "//fhir.hl7.org/CodeSystem?url=http://hl7.org/fhir/observation-status",
+                new CodePhrase(new TerminologyId("http://hl7.org/fhir/observation-status"), "final"));
     }
 
     private void enqueueErrors(int... statusCodes) {
