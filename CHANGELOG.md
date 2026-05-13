@@ -10,13 +10,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  ### Changed 
  ### Fixed 
  - Terminology fixes, for details see SDK changelog [#1616](https://github.com/ehrbase/ehrbase/pull/1616)
+ - Improved external terminology validation performance and stability [#1623](https://github.com/ehrbase/ehrbase/pull/1623)
+ - Added metrics for external FHIR terminology server HTTP calls [#1623](https://github.com/ehrbase/ehrbase/pull/1623)
 
 ## [2.31.0]
  ### Added
  ### Changed
 - Improved template cache configuration [#1618](https://github.com/ehrbase/ehrbase/pull/1618)
 - Improved performance of template service [#1618](https://github.com/ehrbase/ehrbase/pull/1618)
-- Added metrics for external FHIR terminology server HTTP calls [#1617](https://github.com/ehrbase/ehrbase/pull/1617)
  ### Fixed 
 
 ## [2.30.1]
