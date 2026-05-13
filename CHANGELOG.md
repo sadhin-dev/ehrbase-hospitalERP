@@ -10,6 +10,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  ### Changed 
  ### Fixed 
  - Terminology fixes, for details see SDK changelog [#1616](https://github.com/ehrbase/ehrbase/pull/1616)
+ - Improved external terminology validation performance and stability [#1623](https://github.com/ehrbase/ehrbase/pull/1623)
+ - Added metrics for external FHIR terminology server HTTP calls [#1623](https://github.com/ehrbase/ehrbase/pull/1623)
 
 ## [2.31.0]
  ### Added

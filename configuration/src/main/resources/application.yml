@@ -244,6 +244,15 @@ validation:
     #     # request-timeout: 30S # 30 Seconds default
     #     type: FHIR
     #     url: https://r4.ontoserver.csiro.au/fhir/
+    #     maxConnections: 50
+    #     maxPendingConnections: 100
+    #     maxConnectionIdleTimeSeconds: 240
+    #     maxConnectionLifeTimeSeconds: 600
+    #     responseTimeoutSeconds: 10
+    #     enableMetrics: true
+    #     retry:
+    #       attempts: 3
+    #       initialBackoffMillis: 100
 
 # SSL Properties (used by Spring WebClient and Apache HTTP Client)
 client:
