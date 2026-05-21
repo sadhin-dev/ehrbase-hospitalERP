@@ -110,6 +110,11 @@ public abstract class AbstractVersionedObjectRepository<
 
     public record ParsedRow(CharSequence entityIdx, ObjectNode data) {}
 
+    public enum HistoryOperation {
+        UPDATE,
+        DELETE
+    }
+
     public static final String NOT_MATCH_UID = "If-Match version_uid does not match uid";
     public static final String NOT_MATCH_SYSTEM_ID = "If-Match version_uid does not match system id";
     public static final String NOT_MATCH_LATEST_VERSION = "If-Match version_uid does not match latest version";
@@ -268,7 +273,7 @@ public abstract class AbstractVersionedObjectRepository<
         }
 
         OffsetDateTime now = createCurrentTime(firstRecord.get(HISTORY_PROTOTYPE.SYS_PERIOD_LOWER));
-        copyHeadToHistory(versionHead, now);
+        copyHeadToHistory(versionHead, now, HistoryOperation.DELETE);
 
         deleteHead(condition, version, StateConflictException::new);
 
@@ -492,7 +497,7 @@ public abstract class AbstractVersionedObjectRepository<
             }
 
         } else {
-            copyHeadToHistory(versionHeads.getFirst(), now);
+            copyHeadToHistory(versionHeads.getFirst(), now, HistoryOperation.UPDATE);
             deleteHead(condition, headVersion, PreconditionFailedException::new);
         }
 
@@ -718,7 +723,7 @@ public abstract class AbstractVersionedObjectRepository<
     }
 
     protected AdditionalCopyToHistoryFields additionalCopyToHistoryFields(
-            final Table<VR> versionHead, final Table<DR> dataHead, OffsetDateTime now) {
+            final Table<VR> versionHead, final Table<DR> dataHead, OffsetDateTime now, HistoryOperation op) {
         return new AdditionalCopyToHistoryFields(
                 Stream.of(DSL.inline(now), DSL.inline(false), DSL.castNull(Integer.class), stringAggregation(dataHead)),
                 Stream.of(
@@ -728,12 +733,12 @@ public abstract class AbstractVersionedObjectRepository<
                         HISTORY_PROTOTYPE.OV_DATA));
     }
 
-    protected void copyHeadToHistory(HR historyRecord, OffsetDateTime now) {
+    protected void copyHeadToHistory(HR historyRecord, OffsetDateTime now, HistoryOperation op) {
 
         VersionDataJoin versionDataJoin = fromJoinedVersionData(true);
         Table<DR> dataHead = (Table<DR>) versionDataJoin.dataTable();
         Table<VR> versionHead = (Table<VR>) versionDataJoin.versionTable();
-        AdditionalCopyToHistoryFields additionalFields = additionalCopyToHistoryFields(versionHead, dataHead, now);
+        AdditionalCopyToHistoryFields additionalFields = additionalCopyToHistoryFields(versionHead, dataHead, now, op);
         Field<?>[] fields = Streams.concat(
                         // version fields which are also present in version_history
                         Arrays.stream(tables.history().fields())

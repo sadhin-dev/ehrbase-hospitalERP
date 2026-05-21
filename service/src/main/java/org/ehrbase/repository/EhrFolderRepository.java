@@ -25,7 +25,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.google.common.collect.Streams;
 import com.nedap.archie.rm.directory.Folder;
 import com.nedap.archie.rm.support.identification.ObjectVersionId;
 import java.time.OffsetDateTime;
@@ -51,6 +50,7 @@ import org.ehrbase.openehr.dbformat.DbToRmFormat;
 import org.ehrbase.openehr.dbformat.StructureNode;
 import org.ehrbase.openehr.dbformat.VersionedObjectDataStructure;
 import org.ehrbase.repository.EhrFolderRepository.FolderParseContext;
+import org.ehrbase.service.DirectoryProperties;
 import org.ehrbase.service.TimeProvider;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -113,11 +113,14 @@ public class EhrFolderRepository
         }
     }
 
+    private final DirectoryProperties directoryProperties;
+
     public EhrFolderRepository(
             DSLContext context,
             ContributionRepository contributionRepository,
             SystemService systemService,
-            TimeProvider timeProvider) {
+            TimeProvider timeProvider,
+            DirectoryProperties directoryProperties) {
         super(
                 AuditDetailsTargetType.EHR_FOLDER,
                 EhrFolderVersion.EHR_FOLDER_VERSION,
@@ -127,6 +130,7 @@ public class EhrFolderRepository
                 contributionRepository,
                 systemService,
                 timeProvider);
+        this.directoryProperties = directoryProperties;
     }
 
     @Override
@@ -154,13 +158,34 @@ public class EhrFolderRepository
     protected AdditionalCopyToHistoryFields additionalCopyToHistoryFields(
             final Table<EhrFolderVersionRecord> versionHead,
             final Table<EhrFolderDataRecord> dataHead,
-            final OffsetDateTime now) {
-        AdditionalCopyToHistoryFields base = super.additionalCopyToHistoryFields(versionHead, dataHead, now);
+            final OffsetDateTime now,
+            final HistoryOperation op) {
 
-        Field<?> uuidArrayField = itemUuidFieldAggregation(versionHead, context);
+        boolean retainData =
+                switch (directoryProperties.history().retentionPolicy()) {
+                    case ALL -> true;
+                    case NONE -> false;
+                    case ON_DELETE -> op == HistoryOperation.DELETE;
+                };
+
+        Field<?> ovData;
+        Field<?> ovItemUuids;
+        if (retainData) {
+            ovData = stringAggregation(dataHead);
+            ovItemUuids = itemUuidFieldAggregation(versionHead, context);
+        } else {
+            ovData = DSL.castNull(EHR_FOLDER_VERSION_HISTORY.OV_DATA.getDataType());
+            ovItemUuids = DSL.castNull(EHR_FOLDER_VERSION_HISTORY.OV_ITEM_UUIDS.getDataType());
+        }
+
         return new AdditionalCopyToHistoryFields(
-                Streams.concat(base.headFields(), Stream.of(uuidArrayField)),
-                Streams.concat(base.historyFields(), Stream.of(EHR_FOLDER_VERSION_HISTORY.OV_ITEM_UUIDS)));
+                Stream.of(DSL.inline(now), DSL.inline(false), DSL.castNull(Integer.class), ovData, ovItemUuids),
+                Stream.of(
+                        HISTORY_PROTOTYPE.SYS_PERIOD_UPPER,
+                        HISTORY_PROTOTYPE.SYS_DELETED,
+                        HISTORY_PROTOTYPE.OV_REF,
+                        HISTORY_PROTOTYPE.OV_DATA,
+                        EHR_FOLDER_VERSION_HISTORY.OV_ITEM_UUIDS));
     }
 
     /**
