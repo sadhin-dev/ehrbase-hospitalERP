@@ -17,8 +17,8 @@
  */
 package org.ehrbase.configuration.config.validation;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeMap;
 import org.ehrbase.service.validation.ExternalTerminologyProviderProperties;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -31,7 +31,7 @@ public class ExternalValidationProperties {
     private boolean enabled = false;
     private boolean authenticate = false;
     private boolean failOnError = false;
-    private final Map<String, ExternalTerminologyProviderProperties> provider = new HashMap<>();
+    private final Map<String, ExternalTerminologyProviderProperties> provider = new TreeMap<>();
 
     public boolean isEnabled() {
         return enabled;
