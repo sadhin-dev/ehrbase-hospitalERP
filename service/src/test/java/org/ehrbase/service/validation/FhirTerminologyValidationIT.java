@@ -130,7 +130,7 @@ class FhirTerminologyValidationIT {
 
         RecordedRequest request = takeRequest();
         assertThat(request.getPath())
-                .contains("ValueSet")
+                .startsWith("/ValueSet?")
                 .contains("_summary=true")
                 .contains("url=");
 
@@ -160,7 +160,7 @@ class FhirTerminologyValidationIT {
         assertTrue(validation.supports(codeSystemParam()));
 
         RecordedRequest request = takeRequest();
-        assertThat(request.getPath()).contains("CodeSystem").contains("_summary=true");
+        assertThat(request.getPath()).startsWith("/CodeSystem?").contains("_summary=true");
     }
 
     @Test
@@ -216,7 +216,7 @@ class FhirTerminologyValidationIT {
 
         RecordedRequest request = takeRequest();
         assertThat(request.getPath())
-                .contains("CodeSystem/$validate-code")
+                .startsWith("/CodeSystem/$validate-code")
                 .contains("url=")
                 .contains("code=final");
 
@@ -278,7 +278,7 @@ class FhirTerminologyValidationIT {
 
         RecordedRequest request = takeRequest();
         assertThat(request.getPath())
-                .contains("ValueSet/$validate-code")
+                .startsWith("/ValueSet/$validate-code")
                 .contains("url=")
                 .contains("code=final")
                 .contains("system=");

@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import javax.net.ssl.SSLException;
+import org.apache.commons.lang3.StringUtils;
 import org.ehrbase.api.exception.InternalServerException;
 import org.ehrbase.openehr.sdk.validation.ConstraintViolation;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidation;
@@ -58,10 +59,10 @@ import reactor.util.retry.Retry;
  */
 public class FhirTerminologyValidation implements ExternalTerminologyValidation {
 
-    static final String SUPPORTS_CODE_SYS_TEMPL = "CodeSystem?_summary=true&url=%s";
-    static final String SUPPORTS_VALUE_SET_TEMPL = "ValueSet?_summary=true&url=%s";
-    private static final String VALUESET_VALIDATE_URL_TPL = "ValueSet/$validate-code?url=%s&code=%s&system=%s";
-    private static final String CODESYSTEM_VALIDATE_URL_TPL = "CodeSystem/$validate-code?url=%s&code=%s";
+    static final String SUPPORTS_CODE_SYS_TEMPL = "/CodeSystem?_summary=true&url=%s";
+    static final String SUPPORTS_VALUE_SET_TEMPL = "/ValueSet?_summary=true&url=%s";
+    private static final String VALUESET_VALIDATE_URL_TPL = "/ValueSet/$validate-code?url=%s&code=%s&system=%s";
+    private static final String CODESYSTEM_VALIDATE_URL_TPL = "/CodeSystem/$validate-code?url=%s&code=%s";
 
     public static final JsonPath VALIDATE_CODE_RESULT_JSON_PATH =
             JsonPath.compile("$.parameter[?(@.name==\"result\" && @.valueBoolean == true)].valueBoolean");
@@ -111,8 +112,15 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                 .mutate()
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .defaultHeader(HttpHeaders.ACCEPT, FHIR_ACCEPT_HEADER)
-                .baseUrl(provider.getUrl())
+                .baseUrl(normalizeBaseUrl(provider.getUrl()))
                 .build();
+    }
+
+    static String normalizeBaseUrl(String url) {
+        if (StringUtils.isEmpty(url) || url.charAt(url.length() - 1) != '/') {
+            return url;
+        }
+        return url.substring(0, url.length() - 1);
     }
 
     private static boolean mustRetry(Throwable throwable) {
