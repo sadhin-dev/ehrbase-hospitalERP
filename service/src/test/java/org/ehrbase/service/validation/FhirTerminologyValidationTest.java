@@ -28,15 +28,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.jayway.jsonpath.internal.JsonContext;
-import java.util.List;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import net.java.quickcheck.generator.PrimitiveGenerators;
 import org.ehrbase.openehr.sdk.validation.terminology.TerminologyParam;
 import org.ehrbase.service.validation.ExternalTerminologyProviderProperties.ProviderType;
-import org.hl7.fhir.r4.model.ValueSet;
-import org.hl7.fhir.r4.model.ValueSet.ValueSetExpansionComponent;
-import org.hl7.fhir.r4.model.ValueSet.ValueSetExpansionContainsComponent;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -88,32 +82,12 @@ class FhirTerminologyValidationTest {
                         p -> assertThat(FhirTerminologyValidation.extractUrl(p)).isEqualTo("http://snomed.info/sct"));
     }
 
-    static ValueSet anyValueSet() {
-        List<ValueSetExpansionContainsComponent> values = IntStream.range(0, 16)
-                .mapToObj(i -> anyValueSetExpansionContainsComponent())
-                .toList();
-
-        ValueSetExpansionComponent ext = new ValueSetExpansionComponent();
-        ext.setId(anyString());
-        ext.setContains(values);
-
-        ValueSet valueSet = new ValueSet();
-        valueSet.setId(anyString());
-        valueSet.setExpansion(ext);
-
-        return valueSet;
-    }
-
-    static ValueSetExpansionContainsComponent anyValueSetExpansionContainsComponent() {
-        ValueSetExpansionContainsComponent cmp = new ValueSetExpansionContainsComponent();
-        cmp.setId(anyString());
-        cmp.setCode(anyString());
-        cmp.setSystem(anyString());
-        cmp.setDisplay(anyString());
-        return cmp;
-    }
-
-    static String anyString() {
-        return PrimitiveGenerators.letterStrings(1, 16).next();
+    @Test
+    void normalizeBaseUrl() {
+        assertThat(FhirTerminologyValidation.normalizeBaseUrl("")).isEmpty();
+        assertThat(FhirTerminologyValidation.normalizeBaseUrl("http://localhost/fhir/"))
+                .isEqualTo("http://localhost/fhir");
+        assertThat(FhirTerminologyValidation.normalizeBaseUrl("http://localhost/fhir"))
+                .isEqualTo("http://localhost/fhir");
     }
 }
