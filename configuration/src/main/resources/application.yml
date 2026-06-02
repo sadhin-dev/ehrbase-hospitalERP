@@ -87,13 +87,14 @@ ehrbase:
     check-for-extra-nodes: true
     validate-rm-constraints: true
     validate-folders: true
-  directory:
-    history:
-      # Controls how much of a directory's previous state is kept in the history tables.
-      # ALL: keep the data of every version (default)
-      # NONE: keep only version metadata; reads of past versions return 410 Gone
-      # ON_DELETE: keep no data on update, but keep the data of the version on delete
-      retention-policy: ALL
+  versioning:
+    ehr-folder:
+      # Controls how much of a folder's data is kept in the history tables.
+      # KEEP_ALL: keep data for both updates and deletes (default)
+      # KEEP_DELETED: discard data on update, keep on delete
+      # DISCARD_ALL: discard data for both updates and deletes; reads of past versions return 410 Gone
+      # DISCARD_DELETED: keep data on update, discard on delete
+      data-retention: KEEP_ALL
   aql:
     # Improves AQL performance for paths containing consecutive at-/id-codes
     # May produce unexpected results if the paths do not follow the archetype definitions

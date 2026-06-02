@@ -15,18 +15,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.ehrbase.service;
+package org.ehrbase.repository.versioning;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.ehrbase.repository.AbstractVersionedObjectRepository.HistoryOperation;
 
-@ConfigurationProperties(prefix = "ehrbase.directory")
-public record DirectoryProperties(History history) {
+public enum DataRetention {
+    KEEP_ALL,
+    KEEP_DELETED,
+    DISCARD_ALL,
+    DISCARD_DELETED;
 
-    public record History(RetentionPolicy retentionPolicy) {
-        public enum RetentionPolicy {
-            ALL,
-            NONE,
-            ON_DELETE
-        }
+    public boolean retainData(HistoryOperation op) {
+        return switch (this) {
+            case KEEP_ALL -> true;
+            case DISCARD_ALL -> false;
+            case KEEP_DELETED -> op == HistoryOperation.DELETE;
+            case DISCARD_DELETED -> op != HistoryOperation.DELETE;
+        };
     }
 }

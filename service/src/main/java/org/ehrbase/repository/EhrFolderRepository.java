@@ -50,8 +50,9 @@ import org.ehrbase.openehr.dbformat.DbToRmFormat;
 import org.ehrbase.openehr.dbformat.StructureNode;
 import org.ehrbase.openehr.dbformat.VersionedObjectDataStructure;
 import org.ehrbase.repository.EhrFolderRepository.FolderParseContext;
-import org.ehrbase.service.DirectoryProperties;
+import org.ehrbase.repository.versioning.DataRetention;
 import org.ehrbase.service.TimeProvider;
+import org.ehrbase.service.VersioningProperties;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.DeleteConditionStep;
@@ -113,14 +114,14 @@ public class EhrFolderRepository
         }
     }
 
-    private final DirectoryProperties directoryProperties;
+    private final VersioningProperties versioningProperties;
 
     public EhrFolderRepository(
             DSLContext context,
             ContributionRepository contributionRepository,
             SystemService systemService,
             TimeProvider timeProvider,
-            DirectoryProperties directoryProperties) {
+            VersioningProperties versioningProperties) {
         super(
                 AuditDetailsTargetType.EHR_FOLDER,
                 EhrFolderVersion.EHR_FOLDER_VERSION,
@@ -130,7 +131,12 @@ public class EhrFolderRepository
                 contributionRepository,
                 systemService,
                 timeProvider);
-        this.directoryProperties = directoryProperties;
+        this.versioningProperties = versioningProperties;
+    }
+
+    @Override
+    protected DataRetention dataRetention() {
+        return versioningProperties.ehrFolder().dataRetention();
     }
 
     @Override
@@ -159,14 +165,8 @@ public class EhrFolderRepository
             final Table<EhrFolderVersionRecord> versionHead,
             final Table<EhrFolderDataRecord> dataHead,
             final OffsetDateTime now,
-            final HistoryOperation op) {
-
-        boolean retainData =
-                switch (directoryProperties.history().retentionPolicy()) {
-                    case ALL -> true;
-                    case NONE -> false;
-                    case ON_DELETE -> op == HistoryOperation.DELETE;
-                };
+            final HistoryOperation op,
+            final boolean retainData) {
 
         Field<?> ovData;
         Field<?> ovItemUuids;

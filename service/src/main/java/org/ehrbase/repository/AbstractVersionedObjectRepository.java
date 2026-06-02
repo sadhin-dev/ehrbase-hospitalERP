@@ -69,6 +69,7 @@ import org.ehrbase.openehr.dbformat.jooq.prototypes.ObjectDataTablePrototype;
 import org.ehrbase.openehr.dbformat.jooq.prototypes.ObjectHistoryTablePrototype;
 import org.ehrbase.openehr.dbformat.jooq.prototypes.ObjectVersionTablePrototype;
 import org.ehrbase.openehr.dbformat.json.RmDbJson;
+import org.ehrbase.repository.versioning.DataRetention;
 import org.ehrbase.service.TimeProvider;
 import org.jooq.CaseConditionStep;
 import org.jooq.Condition;
@@ -722,10 +723,20 @@ public abstract class AbstractVersionedObjectRepository<
         }
     }
 
+    protected DataRetention dataRetention() {
+        return DataRetention.KEEP_ALL;
+    }
+
     protected AdditionalCopyToHistoryFields additionalCopyToHistoryFields(
-            final Table<VR> versionHead, final Table<DR> dataHead, OffsetDateTime now, HistoryOperation op) {
+            final Table<VR> versionHead,
+            final Table<DR> dataHead,
+            OffsetDateTime now,
+            HistoryOperation op,
+            boolean retainData) {
+        Field<?> ovData =
+                retainData ? stringAggregation(dataHead) : DSL.castNull(HISTORY_PROTOTYPE.OV_DATA.getDataType());
         return new AdditionalCopyToHistoryFields(
-                Stream.of(DSL.inline(now), DSL.inline(false), DSL.castNull(Integer.class), stringAggregation(dataHead)),
+                Stream.of(DSL.inline(now), DSL.inline(false), DSL.castNull(Integer.class), ovData),
                 Stream.of(
                         HISTORY_PROTOTYPE.SYS_PERIOD_UPPER,
                         HISTORY_PROTOTYPE.SYS_DELETED,
@@ -738,7 +749,9 @@ public abstract class AbstractVersionedObjectRepository<
         VersionDataJoin versionDataJoin = fromJoinedVersionData(true);
         Table<DR> dataHead = (Table<DR>) versionDataJoin.dataTable();
         Table<VR> versionHead = (Table<VR>) versionDataJoin.versionTable();
-        AdditionalCopyToHistoryFields additionalFields = additionalCopyToHistoryFields(versionHead, dataHead, now, op);
+        boolean retainData = dataRetention().retainData(op);
+        AdditionalCopyToHistoryFields additionalFields =
+                additionalCopyToHistoryFields(versionHead, dataHead, now, op, retainData);
         Field<?>[] fields = Streams.concat(
                         // version fields which are also present in version_history
                         Arrays.stream(tables.history().fields())

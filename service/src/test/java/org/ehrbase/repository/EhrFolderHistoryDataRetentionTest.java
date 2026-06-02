@@ -28,9 +28,9 @@ import java.util.List;
 import org.ehrbase.api.service.SystemService;
 import org.ehrbase.repository.AbstractVersionedObjectRepository.AdditionalCopyToHistoryFields;
 import org.ehrbase.repository.AbstractVersionedObjectRepository.HistoryOperation;
-import org.ehrbase.service.DirectoryProperties;
-import org.ehrbase.service.DirectoryProperties.History;
-import org.ehrbase.service.DirectoryProperties.History.RetentionPolicy;
+import org.ehrbase.repository.versioning.DataRetention;
+import org.ehrbase.service.VersioningProperties;
+import org.ehrbase.service.VersioningProperties.EntityVersioning;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.SQLDialect;
@@ -38,35 +38,41 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-class EhrFolderRepositoryHistoryRetentionPolicyTest {
+class EhrFolderHistoryDataRetentionTest {
 
     private static final DSLContext CTX = DSL.using(SQLDialect.POSTGRES);
 
     private static final int OV_DATA_IDX = 3;
     private static final int OV_ITEM_UUIDS_IDX = 4;
 
-    private static EhrFolderRepository repository(RetentionPolicy retentionPolicy) {
+    private static EhrFolderRepository repository(DataRetention dataRetention) {
         return new EhrFolderRepository(
                 CTX,
                 mock(ContributionRepository.class),
                 mock(SystemService.class),
                 OffsetDateTime::now,
-                new DirectoryProperties(new History(retentionPolicy)));
+                new VersioningProperties(new EntityVersioning(dataRetention)));
     }
 
     @ParameterizedTest
     @CsvSource({
-        "ALL,       UPDATE, true",
-        "ALL,       DELETE, true",
-        "NONE,      UPDATE, false",
-        "NONE,      DELETE, false",
-        "ON_DELETE, UPDATE, false",
-        "ON_DELETE, DELETE, true",
+        "KEEP_ALL,         UPDATE, true",
+        "KEEP_ALL,         DELETE, true",
+        "DISCARD_ALL,      UPDATE, false",
+        "DISCARD_ALL,      DELETE, false",
+        "KEEP_DELETED,     UPDATE, false",
+        "KEEP_DELETED,     DELETE, true",
+        "DISCARD_DELETED,  UPDATE, true",
+        "DISCARD_DELETED,  DELETE, false",
     })
-    void historyDataRetention(RetentionPolicy retentionPolicy, HistoryOperation op, boolean expectedRetained) {
+    void historyDataRetention(DataRetention dataRetention, HistoryOperation op, boolean expectedRetained) {
 
-        AdditionalCopyToHistoryFields fields = repository(retentionPolicy)
-                .additionalCopyToHistoryFields(EHR_FOLDER_VERSION, EHR_FOLDER_DATA, OffsetDateTime.now(), op);
+        EhrFolderRepository repo = repository(dataRetention);
+        boolean retainData = repo.dataRetention().retainData(op);
+        assertThat(retainData).isEqualTo(expectedRetained);
+
+        AdditionalCopyToHistoryFields fields = repo.additionalCopyToHistoryFields(
+                EHR_FOLDER_VERSION, EHR_FOLDER_DATA, OffsetDateTime.now(), op, retainData);
         List<Field<?>> headFields = fields.headFields().toList();
 
         String ovDataSql = CTX.render(headFields.get(OV_DATA_IDX));
