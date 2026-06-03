@@ -78,15 +78,14 @@ class EhrFolderHistoryDataRetentionTest {
         String ovDataSql = CTX.render(headFields.get(OV_DATA_IDX));
         String ovItemUuidsSql = CTX.render(headFields.get(OV_ITEM_UUIDS_IDX));
 
-        String nullOvData = CTX.render(DSL.castNull(EHR_FOLDER_VERSION_HISTORY.OV_DATA.getDataType()));
-        String nullOvItemUuids = CTX.render(DSL.castNull(EHR_FOLDER_VERSION_HISTORY.OV_ITEM_UUIDS.getDataType()));
+        String expectedOvData = expectedRetained
+                ? CTX.render(repo.stringAggregation(EHR_FOLDER_DATA))
+                : CTX.render(DSL.castNull(EHR_FOLDER_VERSION_HISTORY.OV_DATA.getDataType()));
+        String expectedOvItemUuids = expectedRetained
+                ? CTX.render(EhrFolderRepository.itemUuidFieldAggregation(EHR_FOLDER_VERSION, CTX))
+                : CTX.render(DSL.castNull(EHR_FOLDER_VERSION_HISTORY.OV_ITEM_UUIDS.getDataType()));
 
-        if (expectedRetained) {
-            assertThat(ovDataSql).isNotEqualTo(nullOvData);
-            assertThat(ovItemUuidsSql).isNotEqualTo(nullOvItemUuids);
-        } else {
-            assertThat(ovDataSql).isEqualTo(nullOvData);
-            assertThat(ovItemUuidsSql).isEqualTo(nullOvItemUuids);
-        }
+        assertThat(ovDataSql).isEqualTo(expectedOvData);
+        assertThat(ovItemUuidsSql).isEqualTo(expectedOvItemUuids);
     }
 }

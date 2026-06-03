@@ -168,24 +168,15 @@ public class EhrFolderRepository
             final HistoryOperation op,
             final boolean retainData) {
 
-        Field<?> ovData;
-        Field<?> ovItemUuids;
-        if (retainData) {
-            ovData = stringAggregation(dataHead);
-            ovItemUuids = itemUuidFieldAggregation(versionHead, context);
-        } else {
-            ovData = DSL.castNull(EHR_FOLDER_VERSION_HISTORY.OV_DATA.getDataType());
-            ovItemUuids = DSL.castNull(EHR_FOLDER_VERSION_HISTORY.OV_ITEM_UUIDS.getDataType());
-        }
+        AdditionalCopyToHistoryFields base =
+                super.additionalCopyToHistoryFields(versionHead, dataHead, now, op, retainData);
+        Field<?> ovItemUuids = retainData
+                ? itemUuidFieldAggregation(versionHead, context)
+                : DSL.castNull(EHR_FOLDER_VERSION_HISTORY.OV_ITEM_UUIDS.getDataType());
 
         return new AdditionalCopyToHistoryFields(
-                Stream.of(DSL.inline(now), DSL.inline(false), DSL.castNull(Integer.class), ovData, ovItemUuids),
-                Stream.of(
-                        HISTORY_PROTOTYPE.SYS_PERIOD_UPPER,
-                        HISTORY_PROTOTYPE.SYS_DELETED,
-                        HISTORY_PROTOTYPE.OV_REF,
-                        HISTORY_PROTOTYPE.OV_DATA,
-                        EHR_FOLDER_VERSION_HISTORY.OV_ITEM_UUIDS));
+                Stream.concat(base.headFields(), Stream.of(ovItemUuids)),
+                Stream.concat(base.historyFields(), Stream.of(EHR_FOLDER_VERSION_HISTORY.OV_ITEM_UUIDS)));
     }
 
     /**
