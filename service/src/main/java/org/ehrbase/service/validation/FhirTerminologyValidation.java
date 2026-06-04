@@ -246,7 +246,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         String url =
                 switch (resouceType) {
                     case VALUE_SET -> {
-                        TerminologyId system = codePhrase.getTerminologyId();
+                        String system = codePhrase.getTerminologyId().getValue();
                         yield VALUESET_VALIDATE_URL_TPL.formatted(fhirTerminologyUri, code, system);
                     }
                     case CODE_SYSTEM -> CODESYSTEM_VALIDATE_URL_TPL.formatted(fhirTerminologyUri, code);
