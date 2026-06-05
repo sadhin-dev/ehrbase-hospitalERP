@@ -21,7 +21,6 @@ import com.google.common.net.HttpHeaders;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.nedap.archie.rm.datatypes.CodePhrase;
-import com.nedap.archie.rm.support.identification.TerminologyId;
 import io.netty.handler.timeout.TimeoutException;
 import java.net.ConnectException;
 import java.time.Duration;
@@ -246,7 +245,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         String url =
                 switch (resouceType) {
                     case VALUE_SET -> {
-                        TerminologyId system = codePhrase.getTerminologyId();
+                        String system = codePhrase.getTerminologyId().getValue();
                         yield VALUESET_VALIDATE_URL_TPL.formatted(fhirTerminologyUri, code, system);
                     }
                     case CODE_SYSTEM -> CODESYSTEM_VALIDATE_URL_TPL.formatted(fhirTerminologyUri, code);
