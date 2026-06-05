@@ -9,6 +9,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  ### Added
  ### Changed 
  ### Fixed 
+ - Terminology fixes, for details see SDK changelog [#1616](https://github.com/ehrbase/ehrbase/pull/1616)
+ - Improved external terminology validation performance and stability [#1623](https://github.com/ehrbase/ehrbase/pull/1623)
+ - Added metrics for external FHIR terminology server HTTP calls [#1623](https://github.com/ehrbase/ehrbase/pull/1623)
+
+## [2.31.0]
+ ### Added
+ ### Changed
+- Improved template cache configuration [#1618](https://github.com/ehrbase/ehrbase/pull/1618)
+- Improved performance of template service [#1618](https://github.com/ehrbase/ehrbase/pull/1618)
+ ### Fixed 
+
+## [2.30.1]
+ ### Added
+ ### Changed 
+ ### Fixed 
 
 ## [2.30.0]
  ### Added
@@ -286,4 +301,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 [2.28.0]: https://github.com/ehrbase/ehrbase/compare/v2.27.0...v2.28.0
 [2.29.0]: https://github.com/ehrbase/ehrbase/compare/v2.28.0...v2.29.0
 [2.30.0]: https://github.com/ehrbase/ehrbase/compare/v2.29.0...v2.30.0
-[unreleased]: https://github.com/ehrbase/ehrbase/compare/v2.30.0...HEAD
+[2.30.1]: https://github.com/ehrbase/ehrbase/compare/v2.30.0...v2.30.1
+[2.31.0]: https://github.com/ehrbase/ehrbase/compare/v2.30.1...v2.31.0
+[unreleased]: https://github.com/ehrbase/ehrbase/compare/v2.31.0...HEAD

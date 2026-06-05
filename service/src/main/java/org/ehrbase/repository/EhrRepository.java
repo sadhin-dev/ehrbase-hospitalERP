@@ -188,8 +188,7 @@ public class EhrRepository
         return context.select(EHR_.CREATION_DATE)
                 .from(EHR_)
                 .where(EHR_.ID.eq(ehrId))
-                .fetchOne()
-                .value1();
+                .fetchOne(Record1::value1);
     }
 
     public void adminDelete(UUID ehrId) {
@@ -232,11 +231,19 @@ public class EhrRepository
         return EhrStatus.class;
     }
 
-    private static VersionedEhrStatus recordToVersionedEhrStatus(UUID ehrId, EhrStatusVersionHistoryRecord record) {
+    private static VersionedEhrStatus recordToVersionedEhrStatus(UUID ehrId, EhrStatusVersionHistoryRecord rec) {
         VersionedEhrStatus versionedComposition = new VersionedEhrStatus();
-        versionedComposition.setUid(new HierObjectId(record.getVoId().toString()));
+        versionedComposition.setUid(new HierObjectId(rec.getVoId().toString()));
         versionedComposition.setOwnerId(new ObjectRef<>(new HierObjectId(ehrId.toString()), "local", "ehr"));
-        versionedComposition.setTimeCreated(new DvDateTime(record.getSysPeriodLower()));
+        versionedComposition.setTimeCreated(new DvDateTime(rec.getSysPeriodLower()));
         return versionedComposition;
+    }
+
+    public String getSubjectExternalRef(final UUID ehrId) {
+        EhrStatusData data = EHR_STATUS_DATA.as("data");
+        return context.select(jsonDataField(data, SUBJECT_ID_JSON_PATH))
+                .from(data)
+                .where(data.EHR_ID.eq(ehrId), dataRootCondition(data))
+                .fetchOne(Record1::value1);
     }
 }
