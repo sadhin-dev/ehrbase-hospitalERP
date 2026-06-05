@@ -17,6 +17,7 @@
  */
 package org.ehrbase.service;
 
+import java.util.Objects;
 import org.ehrbase.repository.versioning.DataRetention;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -24,4 +25,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record VersioningProperties(EntityVersioning ehrFolder) {
 
     public record EntityVersioning(DataRetention dataRetention) {}
+
+    public VersioningProperties(EntityVersioning ehrFolder) {
+        this.ehrFolder = Objects.requireNonNullElseGet(ehrFolder, () -> new EntityVersioning(DataRetention.KEEP_ALL));
+    }
 }
