@@ -21,7 +21,6 @@ import com.google.common.net.HttpHeaders;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.nedap.archie.rm.datatypes.CodePhrase;
-import com.nedap.archie.rm.support.identification.TerminologyId;
 import io.netty.handler.timeout.TimeoutException;
 import java.net.ConnectException;
 import java.time.Duration;
