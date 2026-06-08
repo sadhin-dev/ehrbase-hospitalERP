@@ -83,14 +83,6 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
     private final WebClient webClient;
     private final Retry retry;
 
-    public FhirTerminologyValidation(ExternalTerminologyProviderProperties provider) {
-        this(provider, true);
-    }
-
-    public FhirTerminologyValidation(ExternalTerminologyProviderProperties provider, boolean failOnError) {
-        this(provider, failOnError, WebClient.create());
-    }
-
     public FhirTerminologyValidation(
             ExternalTerminologyProviderProperties provider, boolean failOnError, WebClient webClient) {
         this.failOnError = failOnError;
