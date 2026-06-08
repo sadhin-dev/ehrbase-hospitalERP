@@ -488,11 +488,11 @@ public class AqlParameterPostProcessor implements AqlQueryParsingPostProcessor {
 
         public static boolean matches(String input) {
             return
-                    //length is at least (time short)
-                    input.length() >= 6
+            // length is at least (time short)
+            input.length() >= 6
                     // first character must be digit
-                            && Character.isDigit(input.charAt(0))
-                            && TEMPORAL_PATTERN.matcher(input).matches();
+                    && Character.isDigit(input.charAt(0))
+                    && TEMPORAL_PATTERN.matcher(input).matches();
         }
     }
 
