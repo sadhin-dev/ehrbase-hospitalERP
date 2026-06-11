@@ -244,7 +244,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                                 VALUESET_VALIDATE_CODE_SYSTEM_URL_TPL.formatted(
                                         fhirTerminologyUri, code, terminologyId);
                             case CODING ->
-                                VALUESET_VALIDATE_CODING_URL_TPL.formatted(fhirTerminologyUri, code, terminologyId);
+                                VALUESET_VALIDATE_CODING_URL_TPL.formatted(fhirTerminologyUri, terminologyId, code);
                             case EXPAND -> VALUESET_VALIDATE_EXPAND_URL_TPL.formatted(fhirTerminologyUri);
                         };
                     case CODE_SYSTEM -> CODESYSTEM_VALIDATE_URL_TPL.formatted(fhirTerminologyUri, code);
