@@ -68,7 +68,8 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
     private static final String VALUESET_VALIDATE_CODE_SYSTEM_URL_TPL =
             "/ValueSet/$validate-code?url=%s&code=%s&system=%s";
     private static final String VALUESET_VALIDATE_CODING_URL_TPL = "/ValueSet/$validate-code?url=%s&coding=%s%%7C%s";
-    private static final String VALUESET_VALIDATE_EXPAND_URL_TPL = "/ValueSet/$expand?url=%s";
+    private static final String VALUESET_VALIDATE_EXPAND_URL_TPL =
+            "/ValueSet/$expand?url=%s&includeDefinition=false&excludeNested=true";
     private static final String CODESYSTEM_VALIDATE_URL_TPL = "/CodeSystem/$validate-code?url=%s&code=%s";
 
     public static final JsonPath VALIDATE_CODE_RESULT_JSON_PATH =
@@ -281,8 +282,8 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         List<Map<String, String>> codings = doc.read("$.expansion.contains[?(@.code=='" + code + "')]");
 
         if (codings.isEmpty()) {
-            return new ConstraintViolation(
-                    "The value %s does not match any option from value set %s".formatted(code, url));
+            return new ConstraintViolation("The value %s does not match any option from value set %s%s"
+                    .formatted(code, url, getPaginationAddendum(doc)));
         } else {
             boolean matchingSystem =
                     codings.stream().anyMatch(coding -> Strings.CS.equals(system, coding.get(SYSTEM_ATT)));
@@ -290,8 +291,27 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                 return null;
             } else {
                 String systems = codings.stream().map(c -> c.get(SYSTEM_ATT)).collect(Collectors.joining(", "));
-                return new ConstraintViolation("The terminology id for code %s must be %s".formatted(code, systems));
+                return new ConstraintViolation("The terminology id for code %s must be %s%s"
+                        .formatted(code, systems, getPaginationAddendum(doc)));
             }
         }
+    }
+
+    /**
+     * if contains.length < total: amend message to constraint validation
+     *
+     * @param doc
+     * @return
+     */
+    private String getPaginationAddendum(ReadContext doc) {
+        Integer total = doc.read("$.expansion.total", Integer.class);
+        if (total == null) {
+            return "";
+        }
+        Integer containsCount = doc.read("$.expansion.contains.length()", Integer.class);
+        if (containsCount >= total) {
+            return "";
+        }
+        return " (note: value set expansion is incomplete; %d of %d entries returned)".formatted(containsCount, total);
     }
 }
