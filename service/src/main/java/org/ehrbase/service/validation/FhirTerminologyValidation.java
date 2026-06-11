@@ -20,16 +20,20 @@ package org.ehrbase.service.validation;
 import com.google.common.net.HttpHeaders;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
+import com.jayway.jsonpath.ReadContext;
 import com.nedap.archie.rm.datatypes.CodePhrase;
 import io.netty.handler.timeout.TimeoutException;
 import java.net.ConnectException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import javax.net.ssl.SSLException;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.ehrbase.api.exception.InternalServerException;
 import org.ehrbase.openehr.sdk.validation.ConstraintViolation;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidation;
@@ -55,9 +59,21 @@ import reactor.util.retry.Retry;
  */
 public class FhirTerminologyValidation implements ExternalTerminologyValidation {
 
+    private static final String SYSTEM_ATT = "system";
+
+    enum ValuesetValidationMode {
+        CODE_SYSTEM,
+        CODING,
+        EXPAND
+    }
+
     static final String SUPPORTS_CODE_SYS_TEMPL = "/CodeSystem?_summary=true&url=%s";
     static final String SUPPORTS_VALUE_SET_TEMPL = "/ValueSet?_summary=true&url=%s";
-    private static final String VALUESET_VALIDATE_URL_TPL = "/ValueSet/$validate-code?url=%s&code=%s&system=%s";
+
+    private static final String VALUESET_VALIDATE_CODE_SYSTEM_URL_TPL =
+            "/ValueSet/$validate-code?url=%s&code=%s&system=%s";
+    private static final String VALUESET_VALIDATE_CODING_URL_TPL = "/ValueSet/$validate-code?url=%s&coding=%s%%7C%s";
+    private static final String VALUESET_VALIDATE_EXPAND_URL_TPL = "/ValueSet/$expand?url=%s";
     private static final String CODESYSTEM_VALIDATE_URL_TPL = "/CodeSystem/$validate-code?url=%s&code=%s";
 
     public static final JsonPath VALIDATE_CODE_RESULT_JSON_PATH =
@@ -218,20 +234,34 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
 
     private ConstraintViolation validateCode(
             String fhirTerminologyUri, CodePhrase codePhrase, TerminologyParam.ResouceType resouceType) {
+
         String code = codePhrase.getCodeString();
+
+        //TODO CDR-2436 configurable
+        var valuesetValidationMode = ValuesetValidationMode.CODE_SYSTEM;
 
         String url =
                 switch (resouceType) {
-                    case VALUE_SET -> {
-                        String system = codePhrase.getTerminologyId().getValue();
-                        yield VALUESET_VALIDATE_URL_TPL.formatted(fhirTerminologyUri, code, system);
-                    }
+                    case VALUE_SET ->
+                        switch (valuesetValidationMode) {
+                            case CODE_SYSTEM ->
+                                VALUESET_VALIDATE_CODE_SYSTEM_URL_TPL.formatted(
+                                        fhirTerminologyUri,
+                                        code,
+                                        codePhrase.getTerminologyId().getValue());
+                            case CODING ->
+                                VALUESET_VALIDATE_CODING_URL_TPL.formatted(
+                                        fhirTerminologyUri,
+                                        code,
+                                        codePhrase.getTerminologyId().getValue());
+                            case EXPAND -> VALUESET_VALIDATE_EXPAND_URL_TPL.formatted(fhirTerminologyUri);
+                        };
                     case CODE_SYSTEM -> CODESYSTEM_VALIDATE_URL_TPL.formatted(fhirTerminologyUri, code);
                 };
 
-        DocumentContext context;
+        DocumentContext doc;
         try {
-            context = internalGet(url);
+            doc = internalGet(url);
         } catch (WebClientException e) {
             if (failOnError) {
                 throw new ExternalTerminologyValidationException("An error occurred during $validate-code request", e);
@@ -240,12 +270,41 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
             return null;
         }
 
-        boolean noResult = context.<List<?>>read(VALIDATE_CODE_RESULT_JSON_PATH).isEmpty();
-        if (noResult) {
-            List<String> message = context.read(VALIDATE_CODE_MESSAGE_JSON_PATH);
-            return new ConstraintViolation(String.join("; ", message));
+        if (resouceType == TerminologyParam.ResouceType.VALUE_SET
+                && valuesetValidationMode == ValuesetValidationMode.EXPAND) {
+            return validateCodeInExpandedValueSet(
+                    url,
+                    doc,
+                    codePhrase.getCodeString(),
+                    codePhrase.getTerminologyId().getValue());
+        } else {
+            boolean noResult = doc.<List<?>>read(VALIDATE_CODE_RESULT_JSON_PATH).isEmpty();
+            if (noResult) {
+                List<String> messages = doc.read(VALIDATE_CODE_MESSAGE_JSON_PATH);
+                return new ConstraintViolation(String.join("; ", messages));
+            }
         }
 
         return null;
+    }
+
+    private ConstraintViolation validateCodeInExpandedValueSet(
+            String url, ReadContext doc, String code, String system) {
+        // find by expansion/contains/code
+        List<Map<String, String>> codings = doc.read("$.expansion.contains[?(@.code=='" + code + "')]");
+
+        if (codings.isEmpty()) {
+            return new ConstraintViolation(
+                    "The value %s does not match any option from value set %s".formatted(code, url));
+        } else {
+            boolean matchingSystem =
+                    codings.stream().anyMatch(coding -> Strings.CS.equals(system, coding.get(SYSTEM_ATT)));
+            if (matchingSystem) {
+                return null;
+            } else {
+                String systems = codings.stream().map(c -> c.get(SYSTEM_ATT)).collect(Collectors.joining(", "));
+                return new ConstraintViolation("The terminology id for code %s must be %s".formatted(code, systems));
+            }
+        }
     }
 }
