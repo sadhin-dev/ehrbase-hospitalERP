@@ -41,12 +41,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import org.springframework.web.util.UriComponents;
-import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
@@ -78,6 +75,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
     };
 
     private static final Logger LOG = LoggerFactory.getLogger(FhirTerminologyValidation.class);
+    private static final String URL_PARAM = "url";
 
     private final boolean failOnError;
     private final WebClient webClient;
@@ -134,17 +132,6 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         };
     }
 
-    static String extractUrl(String queryParamsString) {
-        if (queryParamsString == null) {
-            return null;
-        }
-
-        UriComponents uriComponents = UriComponentsBuilder.fromUriString("/?%s".formatted(queryParamsString))
-                .build();
-        MultiValueMap<String, String> queryParams = uriComponents.getQueryParams();
-        return queryParams.getFirst("url");
-    }
-
     protected DocumentContext internalGet(String uri)
             throws WebClientException, ExternalTerminologyValidationException {
         // timeout is managed by web client
@@ -198,8 +185,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                         .filter(this::isValidTerminology)
                         .isPresent()
                 && paramOptional
-                        .map(TerminologyParam::parameter)
-                        .map(FhirTerminologyValidation::extractUrl)
+                        .map(p -> p.getParam(URL_PARAM))
                         .map(urlParam -> switch (param.resouceType()) {
                             case VALUE_SET -> SUPPORTS_VALUE_SET_TEMPL.formatted(urlParam);
                             case CODE_SYSTEM -> SUPPORTS_CODE_SYS_TEMPL.formatted(urlParam);
@@ -222,7 +208,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
 
     @Override
     public ConstraintViolation validate(TerminologyParam param) {
-        String url = extractUrl(param.parameter());
+        String url = param.getParam(URL_PARAM);
         if (url == null) {
             return new ConstraintViolation("Missing value-set url");
         }
