@@ -39,6 +39,7 @@ import org.ehrbase.openehr.sdk.validation.ConstraintViolation;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidation;
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidationException;
 import org.ehrbase.openehr.sdk.validation.terminology.TerminologyParam;
+import org.ehrbase.service.validation.ExternalTerminologyProviderProperties.ValuesetValidationMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -60,12 +61,6 @@ import reactor.util.retry.Retry;
 public class FhirTerminologyValidation implements ExternalTerminologyValidation {
 
     private static final String SYSTEM_ATT = "system";
-
-    enum ValuesetValidationMode {
-        CODE_SYSTEM,
-        CODING,
-        EXPAND
-    }
 
     static final String SUPPORTS_CODE_SYS_TEMPL = "/CodeSystem?_summary=true&url=%s";
     static final String SUPPORTS_VALUE_SET_TEMPL = "/ValueSet?_summary=true&url=%s";
@@ -97,6 +92,8 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
     private final WebClient webClient;
     private final Retry retry;
 
+    private final ValuesetValidationMode valuesetValidationMode;
+
     public FhirTerminologyValidation(
             ExternalTerminologyProviderProperties provider, boolean failOnError, WebClient webClient) {
         this.failOnError = failOnError;
@@ -119,6 +116,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                 .defaultHeader(HttpHeaders.ACCEPT, FHIR_ACCEPT_HEADER)
                 .baseUrl(normalizeBaseUrl(provider.getUrl()))
                 .build();
+        this.valuesetValidationMode = provider.getValuesetValidationMode();
     }
 
     static String normalizeBaseUrl(String url) {
@@ -236,9 +234,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
             String fhirTerminologyUri, CodePhrase codePhrase, TerminologyParam.ResouceType resouceType) {
 
         String code = codePhrase.getCodeString();
-
-        //TODO CDR-2436 configurable
-        var valuesetValidationMode = ValuesetValidationMode.CODE_SYSTEM;
+        String terminologyId = codePhrase.getTerminologyId().getValue();
 
         String url =
                 switch (resouceType) {
@@ -246,14 +242,9 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                         switch (valuesetValidationMode) {
                             case CODE_SYSTEM ->
                                 VALUESET_VALIDATE_CODE_SYSTEM_URL_TPL.formatted(
-                                        fhirTerminologyUri,
-                                        code,
-                                        codePhrase.getTerminologyId().getValue());
+                                        fhirTerminologyUri, code, terminologyId);
                             case CODING ->
-                                VALUESET_VALIDATE_CODING_URL_TPL.formatted(
-                                        fhirTerminologyUri,
-                                        code,
-                                        codePhrase.getTerminologyId().getValue());
+                                VALUESET_VALIDATE_CODING_URL_TPL.formatted(fhirTerminologyUri, code, terminologyId);
                             case EXPAND -> VALUESET_VALIDATE_EXPAND_URL_TPL.formatted(fhirTerminologyUri);
                         };
                     case CODE_SYSTEM -> CODESYSTEM_VALIDATE_URL_TPL.formatted(fhirTerminologyUri, code);
@@ -272,11 +263,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
 
         if (resouceType == TerminologyParam.ResouceType.VALUE_SET
                 && valuesetValidationMode == ValuesetValidationMode.EXPAND) {
-            return validateCodeInExpandedValueSet(
-                    url,
-                    doc,
-                    codePhrase.getCodeString(),
-                    codePhrase.getTerminologyId().getValue());
+            return validateCodeInExpandedValueSet(url, doc, code, terminologyId);
         } else {
             boolean noResult = doc.<List<?>>read(VALIDATE_CODE_RESULT_JSON_PATH).isEmpty();
             if (noResult) {
