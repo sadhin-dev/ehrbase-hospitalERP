@@ -18,7 +18,9 @@
 package org.ehrbase.service.validation;
 
 import com.google.common.net.HttpHeaders;
+import com.jayway.jsonpath.Criteria;
 import com.jayway.jsonpath.DocumentContext;
+import com.jayway.jsonpath.Filter;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.ReadContext;
 import com.nedap.archie.rm.datatypes.CodePhrase;
@@ -28,10 +30,15 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.net.ssl.SSLException;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.ListUtils;
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.Strings;
 import org.ehrbase.api.exception.InternalServerException;
@@ -40,6 +47,7 @@ import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidat
 import org.ehrbase.openehr.sdk.validation.terminology.ExternalTerminologyValidationException;
 import org.ehrbase.openehr.sdk.validation.terminology.TerminologyParam;
 import org.ehrbase.service.validation.ExternalTerminologyProviderProperties.ValuesetValidationMode;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -68,8 +76,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
     private static final String VALUESET_VALIDATE_CODE_SYSTEM_URL_TPL =
             "/ValueSet/$validate-code?url=%s&code=%s&system=%s";
     private static final String VALUESET_VALIDATE_CODING_URL_TPL = "/ValueSet/$validate-code?url=%s&coding=%s%%7C%s";
-    private static final String VALUESET_VALIDATE_EXPAND_URL_TPL =
-            "/ValueSet/$expand?url=%s&includeDefinition=false&excludeNested=true";
+    private static final String VALUESET_VALIDATE_EXPAND_URL_TPL = "/ValueSet/$expand?url=%s&offset=%d";
     private static final String CODESYSTEM_VALIDATE_URL_TPL = "/CodeSystem/$validate-code?url=%s&code=%s";
 
     public static final JsonPath VALIDATE_CODE_RESULT_JSON_PATH =
@@ -78,8 +85,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
             JsonPath.compile("$.parameter[?(@.name==\"message\")].valueString");
     public static final JsonPath SUPPORTS_TOTAL_JSON_PATH = JsonPath.compile("$.total");
 
-    private static final String ERR_SUPPORTS =
-            "An error occurred while checking if FHIR terminology server supports the referenceSetUri: %s";
+    private static final int MAX_VALUESET_EXPAND_PAGES = 500_000 / 1_000;
 
     public static final String FHIR_ACCEPT_HEADER = "application/fhir+json";
 
@@ -210,9 +216,13 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                                 return internalGet(url);
                             } catch (WebClientException e) {
                                 if (failOnError) {
-                                    throw new ExternalTerminologyValidationException(ERR_SUPPORTS.formatted(url), e);
+                                    throw new ExternalTerminologyValidationException(
+                                            "An error occurred while checking if FHIR terminology server supports the referenceSetUri: %s"
+                                                    .formatted(url),
+                                            e);
                                 }
-                                LOG.warn("The following error occurred: {}", e.getMessage());
+                                LOG.warn(
+                                        "FHIR terminology server supports call failed for {}: {}", url, e.getMessage());
                                 return null;
                             }
                         })
@@ -246,25 +256,19 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
                                         fhirTerminologyUri, code, terminologyId);
                             case CODING ->
                                 VALUESET_VALIDATE_CODING_URL_TPL.formatted(fhirTerminologyUri, terminologyId, code);
-                            case EXPAND -> VALUESET_VALIDATE_EXPAND_URL_TPL.formatted(fhirTerminologyUri);
+                            case EXPAND -> VALUESET_VALIDATE_EXPAND_URL_TPL.formatted(fhirTerminologyUri, 0);
                         };
                     case CODE_SYSTEM -> CODESYSTEM_VALIDATE_URL_TPL.formatted(fhirTerminologyUri, code);
                 };
 
-        DocumentContext doc;
-        try {
-            doc = internalGet(url);
-        } catch (WebClientException e) {
-            if (failOnError) {
-                throw new ExternalTerminologyValidationException("An error occurred during $validate-code request", e);
-            }
-            LOG.warn("An error occurred while validating the code in CodeSystem: {}", e.getMessage());
+        DocumentContext doc = getDocumentForValidateCode(url);
+        if (doc == null) {
             return null;
         }
 
         if (resouceType == TerminologyParam.ResouceType.VALUE_SET
                 && valuesetValidationMode == ValuesetValidationMode.EXPAND) {
-            return validateCodeInExpandedValueSet(url, doc, code, terminologyId);
+            return validateCodeInExpandedValueSet(fhirTerminologyUri, url, doc, code, terminologyId);
         } else {
             boolean noResult = doc.<List<?>>read(VALIDATE_CODE_RESULT_JSON_PATH).isEmpty();
             if (noResult) {
@@ -276,42 +280,119 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         return null;
     }
 
-    private ConstraintViolation validateCodeInExpandedValueSet(
-            String url, ReadContext doc, String code, String system) {
-        // find by expansion/contains/code
-        List<Map<String, String>> codings = doc.read("$.expansion.contains[?(@.code=='" + code + "')]");
-
-        if (codings.isEmpty()) {
-            return new ConstraintViolation("The value %s does not match any option from value set %s%s"
-                    .formatted(code, url, getPaginationAddendum(doc)));
-        } else {
-            boolean matchingSystem =
-                    codings.stream().anyMatch(coding -> Strings.CS.equals(system, coding.get(SYSTEM_ATT)));
-            if (matchingSystem) {
-                return null;
-            } else {
-                String systems = codings.stream().map(c -> c.get(SYSTEM_ATT)).collect(Collectors.joining(", "));
-                return new ConstraintViolation("The terminology id for code %s must be %s%s"
-                        .formatted(code, systems, getPaginationAddendum(doc)));
+    private @Nullable DocumentContext getDocumentForValidateCode(String url) {
+        try {
+            return internalGet(url);
+        } catch (WebClientException e) {
+            if (failOnError) {
+                throw new ExternalTerminologyValidationException(
+                        "An error occurred during ValueSet code validation request", e);
             }
+            LOG.warn("FHIR terminology server validate call failed for {}: {}", url, e.getMessage());
+            return null;
         }
     }
 
     /**
-     * if contains.length < total: amend message to constraint validation
      *
-     * @param doc
-     * @return
+     * @param fhirTerminologyUri for paging
+     * @param url for ConstraintViolations
+     * @param doc the ValueSet json
+     * @param code
+     * @param system
+     * @return a ConstraintViolation or null
      */
-    private String getPaginationAddendum(ReadContext doc) {
+    private ConstraintViolation validateCodeInExpandedValueSet(
+            String fhirTerminologyUri, String url, ReadContext doc, String code, String system) {
+        // find by expansion/contains/code; 'contains' can be nested
+        Filter codeFilter = Filter.filter(Criteria.where("code").eq(code));
+        List<Map<String, String>> matchingCodings = doc.read("$.expansion..contains[?]", codeFilter);
+
+        // gathers mismatching systems that support the code, may be null
+        List<String> otherSystems = null;
+
+        ReadContext page = doc;
+        int pageNr = 1;
+        while (page != null) {
+
+            boolean matchingSystem =
+                    matchingCodings.stream().anyMatch(coding -> Strings.CS.equals(system, coding.get(SYSTEM_ATT)));
+            if (matchingSystem) {
+                return null;
+            }
+            if (!matchingCodings.isEmpty()) {
+                Stream<String> systemsStream = matchingCodings.stream().map(c -> c.get(SYSTEM_ATT));
+                if (otherSystems == null) {
+                    otherSystems = systemsStream.collect(Collectors.toList());
+                } else {
+                    systemsStream.forEach(otherSystems::add);
+                }
+            }
+
+            if (pageNr > MAX_VALUESET_EXPAND_PAGES) {
+                Integer total = doc.read("$.expansion.total", Integer.class);
+                Integer offset = doc.read("$.expansion.offset", Integer.class);
+                Integer count = Optional.of(
+                                doc.<List<Integer>>read("$.expansion.parameter[?(@.name=='count')].valueInteger"))
+                        .filter(CollectionUtils::isNotEmpty)
+                        .map(ListUtils::getFirst)
+                        .orElse(null);
+                return new ConstraintViolation(
+                        "ValueSet too large: more than %s pages, total: %d, offset: %d, count: %d"
+                                .formatted(MAX_VALUESET_EXPAND_PAGES, total, offset, count));
+            }
+
+            // continue paging?
+            try {
+                page = getNextValueSetPage(page, fhirTerminologyUri);
+            } catch (ExternalTerminologyValidationException e) {
+                // handle ExternalTerminologyValidationException as regular ConstraintViolation
+                return new ConstraintViolation(e.getMessage());
+            }
+            pageNr++;
+        }
+
+        if (otherSystems == null) {
+            return new ConstraintViolation(
+                    "The value %s does not match any option from ValueSet %s".formatted(code, url));
+        } else {
+            String systems = String.join(", ", otherSystems);
+            return new ConstraintViolation("The terminology id for code %s must be %s".formatted(code, systems));
+        }
+    }
+
+    private @Nullable ReadContext getNextValueSetPage(ReadContext doc, String fhirTerminologyUri) {
+
+        int containsCount = doc.read("$.expansion.contains.length()", Integer.class);
+        // empty page
+        if (containsCount == 0) {
+            return null;
+        }
         Integer total = doc.read("$.expansion.total", Integer.class);
-        if (total == null) {
-            return "";
+        int offset = ObjectUtils.firstNonNull(doc.read("$.expansion.offset", Integer.class), 0);
+        int totalRetrieved = containsCount + offset;
+
+        // already last page?
+        // rely on trailing empty page if total is not consistent
+        if (total != null && totalRetrieved == total) {
+            return null;
         }
-        Integer containsCount = doc.read("$.expansion.contains.length()", Integer.class);
-        if (containsCount >= total) {
-            return "";
+
+        DocumentContext nextPage = getDocumentForValidateCode(
+                VALUESET_VALIDATE_EXPAND_URL_TPL.formatted(fhirTerminologyUri, totalRetrieved));
+
+        if (nextPage == null) {
+            return null;
         }
-        return " (note: value set expansion is incomplete; %d of %d entries returned)".formatted(containsCount, total);
+
+        // check paging works
+        int nextOffset = ObjectUtils.firstNonNull(nextPage.read("$.expansion.offset", Integer.class), 0);
+        if (!Objects.equals(totalRetrieved, nextOffset)) {
+            throw new ExternalTerminologyValidationException(
+                    "Inconsistent paging: The ValueSet expansion offset for %s is incomplete; expected %s vs. %s "
+                            .formatted(fhirTerminologyUri, totalRetrieved, nextOffset));
+        }
+
+        return nextPage;
     }
 }
