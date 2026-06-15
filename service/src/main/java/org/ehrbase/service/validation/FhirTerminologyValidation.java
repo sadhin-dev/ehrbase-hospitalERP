@@ -355,7 +355,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
 
         if (otherSystems == null) {
             return new ConstraintViolation(
-                    "The value %s does not match any option from ValueSet %s".formatted(code, url));
+                    "The value %s#%s does not match any option from ValueSet %s".formatted(system, code, url));
         } else {
             String systems = String.join(", ", otherSystems);
             return new ConstraintViolation("The terminology id for code %s must be %s".formatted(code, systems));
