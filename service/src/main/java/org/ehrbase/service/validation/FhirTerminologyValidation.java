@@ -306,7 +306,6 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
             String fhirTerminologyUri, String url, ReadContext doc, String code, String system) {
         // find by expansion/contains/code; 'contains' can be nested
         Filter codeFilter = Filter.filter(Criteria.where("code").eq(code));
-        List<Map<String, String>> matchingCodings = doc.read("$.expansion..contains[?]", codeFilter);
 
         // gathers mismatching systems that support the code, may be null
         List<String> otherSystems = null;
@@ -314,6 +313,8 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         ReadContext page = doc;
         int pageNr = 1;
         while (page != null) {
+
+            List<Map<String, String>> matchingCodings = page.read("$.expansion..contains[?]", codeFilter);
 
             boolean matchingSystem =
                     matchingCodings.stream().anyMatch(coding -> Strings.CS.equals(system, coding.get(SYSTEM_ATT)));
@@ -368,12 +369,12 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         if (containsCount == 0) {
             return null;
         }
-        Integer total = doc.read("$.expansion.total", Integer.class);
         int offset = ObjectUtils.firstNonNull(doc.read("$.expansion.offset", Integer.class), 0);
         int totalRetrieved = containsCount + offset;
 
         // already last page?
         // rely on trailing empty page if total is not consistent
+        Integer total = doc.read("$.expansion.total", Integer.class);
         if (total != null && totalRetrieved == total) {
             return null;
         }
