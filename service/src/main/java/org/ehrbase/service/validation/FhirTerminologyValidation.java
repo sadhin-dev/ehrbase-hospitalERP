@@ -286,7 +286,7 @@ public class FhirTerminologyValidation implements ExternalTerminologyValidation 
         } catch (WebClientException e) {
             if (failOnError) {
                 throw new ExternalTerminologyValidationException(
-                        "An error occurred during ValueSet code validation request", e);
+                        "An error occurred during terminology code validation request", e);
             }
             LOG.warn("FHIR terminology server validate call failed for {}: {}", url, e.getMessage());
             return null;
