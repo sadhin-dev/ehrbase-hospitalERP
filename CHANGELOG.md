@@ -7,8 +7,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [unreleased]
  ### Added
+- Option to rely on ValueSets expansion for fhir terminology validation [1636](https://github.dev/ehrbase/ehrbase/pull/1636)
  ### Changed 
  ### Fixed 
+- Validation of DV_CODED_TEXT.value for template-defined terminologies [1636](https://github.dev/ehrbase/ehrbase/pull/1636)
 
 ## [2.32.0]
  ### Added
