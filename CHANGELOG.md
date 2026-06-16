@@ -10,6 +10,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Option to rely on ValueSets expansion for fhir terminology validation [1636](https://github.dev/ehrbase/ehrbase/pull/1636)
  ### Changed 
  ### Fixed 
+- (openEHR_SDK 2.33.1) string primitives that could represent compact temporals are no longer transformed to extended format when executing AQL [#752](https://github.com/ehrbase/openEHR_SDK/pull/752)
 - Validation of DV_CODED_TEXT.value for template-defined terminologies [1636](https://github.dev/ehrbase/ehrbase/pull/1636)
 
 ## [2.32.0]
