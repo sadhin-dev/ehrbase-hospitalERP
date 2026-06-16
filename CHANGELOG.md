@@ -7,6 +7,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [unreleased]
  ### Added
+ ### Changed 
+ ### Fixed 
+
+## [2.33.0]
+ ### Added
 - Option to rely on ValueSets expansion for fhir terminology validation [1636](https://github.dev/ehrbase/ehrbase/pull/1636)
  ### Changed 
  ### Fixed 
@@ -315,4 +320,5 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 [2.30.1]: https://github.com/ehrbase/ehrbase/compare/v2.30.0...v2.30.1
 [2.31.0]: https://github.com/ehrbase/ehrbase/compare/v2.30.1...v2.31.0
 [2.32.0]: https://github.com/ehrbase/ehrbase/compare/v2.31.0...v2.32.0
-[unreleased]: https://github.com/ehrbase/ehrbase/compare/v2.32.0...HEAD
+[2.33.0]: https://github.com/ehrbase/ehrbase/compare/v2.32.0...v2.33.0
+[unreleased]: https://github.com/ehrbase/ehrbase/compare/v2.33.0...HEAD
