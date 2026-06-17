@@ -29,6 +29,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Validation of limits of intervals with partial dates, see SDK changelog [#1633](https://github.com/ehrbase/ehrbase/pull/1633) [SDK#747](https://github.dev/ehrbase/openEHR_SDK/pull/747)
 - Prevent mixing of long and short time format,see SDK changelog [#1633](https://github.com/ehrbase/ehrbase/pull/1633) [SDK#747](https://github.dev/ehrbase/openEHR_SDK/pull/747)
 
+## [2.30.2]
+### Fixed
+- (openEHR_SDK 2.31.1) string primitives that could represent compact temporals are no longer transformed to extended format when executing AQL
+
 ## [2.31.0]
  ### Added
  ### Changed
